@@ -19,6 +19,7 @@ from axis_engine.linework_axis_extractor import (
     infer_wall_thicknesses,
     repair_wall_linework,
 )
+from axis_engine.opening_embedment import infer_opening_embedments, unmatched_opening_indices
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 
 from cad_tests.dxf_utils import (
@@ -64,6 +65,14 @@ def parse_args():
     parser.add_argument("--opening-min-cluster-lines", type=int, default=2)
     parser.add_argument("--opening-bbox-padding", type=float, default=0.0)
     parser.add_argument("--opening-max-bbox-size", type=float, default=5000.0)
+    parser.add_argument(
+        "--show-opening-embedments", action="store_true", help="根据门窗组和墙轴线推断并绘制嵌入线。"
+    )
+    parser.add_argument("--embedment-search-distance", type=float, default=700.0)
+    parser.add_argument("--embedment-min-length", type=float, default=80.0)
+    parser.add_argument("--embedment-max-length", type=float, default=None)
+    parser.add_argument("--embedment-axis-alignment-tolerance", type=float, default=160.0)
+    parser.add_argument("--diagnose-unmatched-openings", action="store_true")
     parser.add_argument("--show-polygons", action="store_true", help="额外绘制原始线段重构的辅助多边形。")
     parser.add_argument("--show", action="store_true", help="保存后弹出 matplotlib 窗口。")
     return parser.parse_args()
@@ -114,7 +123,9 @@ def main():
         print(f"轴线墙厚分布: {summary}")
 
     opening_lines = []
+    opening_clusters = []
     opening_bboxes = []
+    opening_embedments = []
     if args.opening_layers:
         opening_lines = read_dxf_line_segments_from_layers(doc, args.opening_layers)
         opening_clusters = cluster_line_segments(
@@ -127,6 +138,20 @@ def main():
         print(f"门窗图层: {', '.join(args.opening_layers)}")
         print(f"门窗线段: {len(opening_lines)}")
         print(f"门窗包围盒: {len(opening_bboxes)}")
+
+        if args.show_opening_embedments:
+            opening_embedments = infer_opening_embedments(
+                axes,
+                opening_clusters,
+                search_distance=args.embedment_search_distance,
+                bbox_padding=args.opening_bbox_padding,
+                min_embed_length=args.embedment_min_length,
+                max_embed_length=args.embedment_max_length,
+                axis_alignment_tolerance=args.embedment_axis_alignment_tolerance,
+            )
+            print(f"门窗嵌入线: {len(opening_embedments)}")
+            if args.diagnose_unmatched_openings:
+                _print_unmatched_openings(opening_clusters, opening_embedments)
 
     wall_polygon = None
     if args.show_polygons:
@@ -147,6 +172,7 @@ def main():
         show=args.show,
         opening_lines=opening_lines,
         opening_bboxes=opening_bboxes,
+        opening_embedments=opening_embedments,
     )
     print(f"输出图片: {Path(args.output)}")
     print(f"总耗时: {perf_counter() - start:.2f}s")
@@ -160,6 +186,7 @@ def plot_result(
     show: bool = False,
     opening_lines=None,
     opening_bboxes=None,
+    opening_embedments=None,
 ):
     fig, ax = plt.subplots(figsize=(16, 10))
 
@@ -187,17 +214,18 @@ def plot_result(
     wall_label_added = False
     for line, thickness in axes:
         x, y = line.xy
-        color = colors.get(float(thickness), "#d32f2f")
+        # color = colors.get(float(thickness), "#d32f2f")
+        color = "red"
         label = "wall axis" if not wall_label_added else None
         ax.plot(x, y, color=color, linewidth=1.6, zorder=10, label=label)
         wall_label_added = True
 
     opening_line_label_added = False
-    for line in opening_lines or []:
-        x, y = line.xy
-        label = "door/window linework" if not opening_line_label_added else None
-        ax.plot(x, y, color="#2e7d32", linewidth=0.9, alpha=0.9, zorder=11, label=label)
-        opening_line_label_added = True
+    # for line in opening_lines or []:
+    #     x, y = line.xy
+    #     label = "door/window linework" if not opening_line_label_added else None
+    #     ax.plot(x, y, color="#2e7d32", linewidth=0.9, alpha=0.9, zorder=11, label=label)
+    #     opening_line_label_added = True
 
     bbox_label_added = False
     for minx, miny, maxx, maxy in opening_bboxes or []:
@@ -217,8 +245,34 @@ def plot_result(
         ax.add_patch(rect)
         bbox_label_added = True
 
+    embedment_colors = {
+        "door": "#00acc1",
+        "window": "#43a047",
+        "balcony": "#f57c00",
+    }
+    embedment_labels = set()
+    for embedment in opening_embedments or []:
+        color = embedment_colors.get(embedment.opening_type, "#00acc1")
+        label = None
+        if embedment.opening_type not in embedment_labels:
+            label = f"{embedment.opening_type} embedment"
+            embedment_labels.add(embedment.opening_type)
+        for line in _iter_lines(embedment.embed_line):
+            x, y = line.xy
+            ax.plot(
+                x,
+                y,
+                color=color,
+                linewidth=2.2,
+                alpha=0.95,
+                zorder=13,
+                label=label,
+            )
+            label = None
+        # ax.scatter(x, y, s=8, color=color, zorder=14)
+
     ax.set_aspect("equal", adjustable="box")
-    ax.set_title("Wall Axes With Door/Window Linework And Bounding Boxes")
+    ax.set_title("Wall Axes With Door/Window Linework, Bounding Boxes And Embedments")
     ax.legend(loc="upper right")
     ax.grid(True, linestyle="--", alpha=0.2)
     ax.tick_params(labelsize=7)
@@ -228,6 +282,25 @@ def plot_result(
     if show:
         plt.show()
     plt.close(fig)
+
+
+def _iter_lines(geometry):
+    if isinstance(geometry, MultiLineString):
+        return list(geometry.geoms)
+    return [geometry]
+
+
+def _print_unmatched_openings(opening_clusters, opening_embedments):
+    unmatched = unmatched_opening_indices(len(opening_clusters), opening_embedments)
+    print(f"未匹配门窗: {len(unmatched)}")
+    for index in unmatched[:50]:
+        minx, miny, maxx, maxy = _cluster_bounds(opening_clusters[index])
+        print(
+            f"  opening#{index}: "
+            f"bounds=({minx:.1f}, {miny:.1f}, {maxx:.1f}, {maxy:.1f}), "
+            f"size=({maxx - minx:.1f} x {maxy - miny:.1f}), "
+            f"lines={len(opening_clusters[index])}"
+        )
 
 
 if __name__ == "__main__":
