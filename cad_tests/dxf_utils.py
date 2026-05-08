@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import ezdxf
+from ezdxf.math import bulge_to_arc
 from shapely.geometry import LineString
 
 
 logging.getLogger("ezdxf").setLevel(logging.ERROR)
+
+Point2D = tuple[float, float]
+Transform2D = tuple[float, float, float, float, float, float]
+IDENTITY_TRANSFORM: Transform2D = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
 def read_dxf(path: str | Path):
@@ -37,22 +43,32 @@ def pick_dxf_wall_layers(doc, explicit_layers: Sequence[str] | None = None) -> l
     return candidates
 
 
-def read_dxf_line_segments_from_layers(doc, layer_names: Iterable[str], min_length: float = 1.0) -> list[LineString]:
+def read_dxf_line_segments_from_layers(
+    doc,
+    layer_names: Iterable[str],
+    min_length: float = 1.0,
+    visible_only: bool = False,
+) -> list[LineString]:
     layer_set = set(layer_names)
     lines: list[LineString] = []
 
-    def collect(entity, selected_by_parent: bool):
+    def collect(entity, selected_by_parent: bool, transform: Transform2D):
         if not selected_by_parent and entity.dxf.layer not in layer_set:
             return
 
-        for start, end in _entity_segments(entity):
+        for start, end in _entity_segments(entity, transform):
             line = LineString([start, end])
             if line.length >= min_length:
                 lines.append(line)
 
     for entity in doc.modelspace():
-        for expanded_entity, selected_by_parent in _iter_entity_and_nested_virtuals(entity, layer_set):
-            collect(expanded_entity, selected_by_parent)
+        for expanded_entity, selected_by_parent, transform in _iter_entity_and_nested_virtuals(
+            entity,
+            layer_set,
+            doc=doc,
+            visible_only=visible_only,
+        ):
+            collect(expanded_entity, selected_by_parent, transform)
 
     return lines
 
@@ -61,17 +77,23 @@ def read_dxf_line_segment_groups_from_layers(
     doc,
     layer_names: Iterable[str],
     min_length: float = 1.0,
+    visible_only: bool = False,
 ) -> list[list[LineString]]:
     layer_set = set(layer_names)
     groups: list[list[LineString]] = []
 
     for entity in doc.modelspace():
         entity_group: list[LineString] = []
-        for expanded_entity, selected_by_parent in _iter_entity_and_nested_virtuals(entity, layer_set):
+        for expanded_entity, selected_by_parent, transform in _iter_entity_and_nested_virtuals(
+            entity,
+            layer_set,
+            doc=doc,
+            visible_only=visible_only,
+        ):
             if not selected_by_parent and expanded_entity.dxf.layer not in layer_set:
                 continue
 
-            for start, end in _entity_segments(expanded_entity):
+            for start, end in _entity_segments(expanded_entity, transform):
                 line = LineString([start, end])
                 if line.length >= min_length:
                     entity_group.append(line)
@@ -87,41 +109,73 @@ def _iter_entity_and_nested_virtuals(
     selected_layers: set[str] | None = None,
     parent_selected: bool = False,
     max_depth: int = 8,
+    doc=None,
+    visible_only: bool = False,
+    in_block: bool = False,
+    transform: Transform2D = IDENTITY_TRANSFORM,
+    visited_blocks: frozenset[str] = frozenset(),
 ):
     selected_layers = selected_layers or set()
+    if visible_only and not _is_entity_visible(entity, doc, in_block):
+        return
+
     selected = parent_selected or entity.dxf.layer in selected_layers
-    yield entity, parent_selected
+    yield entity, parent_selected, transform
 
     if max_depth <= 0 or entity.dxftype() != "INSERT":
         return
 
+    if doc is None:
+        return
+
     try:
-        virtual_entities = list(entity.virtual_entities())
+        block_name = entity.dxf.name
+        if block_name in visited_blocks:
+            return
+        block = doc.blocks[block_name]
     except Exception:
         return
 
-    for virtual_entity in virtual_entities:
+    next_transform = _compose_transform(transform, _insert_transform(entity))
+    next_visited = visited_blocks | {block_name}
+    for virtual_entity in block:
         yield from _iter_entity_and_nested_virtuals(
             virtual_entity,
             selected_layers=selected_layers,
             parent_selected=selected,
             max_depth=max_depth - 1,
+            doc=doc,
+            visible_only=visible_only,
+            in_block=True,
+            transform=next_transform,
+            visited_blocks=next_visited,
         )
 
 
-def _entity_segments(entity) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+def _entity_segments(
+    entity,
+    transform: Transform2D = IDENTITY_TRANSFORM,
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
     entity_type = entity.dxftype()
 
     if entity_type == "LINE":
-        return [(_xy(entity.dxf.start), _xy(entity.dxf.end))]
+        return [(_apply_transform(_xy(entity.dxf.start), transform), _apply_transform(_xy(entity.dxf.end), transform))]
+
+    if entity_type in {"ARC", "CIRCLE"}:
+        sagitta = _local_curve_tolerance(transform)
+        return _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(sagitta)], False)
+
+    if entity_type == "ELLIPSE":
+        distance = _local_curve_tolerance(transform)
+        return _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(distance)], False)
 
     if entity_type == "LWPOLYLINE":
-        points = [(float(x), float(y)) for x, y in entity.get_points("xy")]
-        return _segments_from_points(points, bool(entity.closed))
+        points = [((float(x), float(y)), float(bulge)) for x, y, _start_width, _end_width, bulge in entity.get_points("xyseb")]
+        return _transform_segments(_segments_from_bulged_points(points, bool(entity.closed), transform), transform)
 
     if entity_type == "POLYLINE":
-        points = [_xy(vertex.dxf.location) for vertex in entity.vertices]
-        return _segments_from_points(points, bool(entity.is_closed))
+        points = [(_xy(vertex.dxf.location), float(vertex.dxf.get("bulge", 0.0))) for vertex in entity.vertices]
+        return _transform_segments(_segments_from_bulged_points(points, bool(entity.is_closed), transform), transform)
 
     return []
 
@@ -133,5 +187,114 @@ def _segments_from_points(points: Sequence[tuple[float, float]], closed: bool):
     return segments
 
 
+def _segments_from_bulged_points(
+    points: Sequence[tuple[tuple[float, float], float]],
+    closed: bool,
+    transform: Transform2D = IDENTITY_TRANSFORM,
+):
+    if len(points) < 2:
+        return []
+
+    segments = []
+    pairs = list(zip(points, points[1:]))
+    if closed and len(points) > 2:
+        pairs.append((points[-1], points[0]))
+
+    for (start, bulge), (end, _next_bulge) in pairs:
+        if abs(bulge) < 1e-12:
+            segments.append((start, end))
+            continue
+
+        arc_points = _bulge_arc_points(start, end, bulge, transform)
+        segments.extend(_segments_from_points(arc_points, False))
+
+    return segments
+
+
+def _bulge_arc_points(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    bulge: float,
+    transform: Transform2D = IDENTITY_TRANSFORM,
+):
+    center, start_angle, end_angle, radius = bulge_to_arc(start, end, bulge)
+    angle_span = (end_angle - start_angle) % (math.tau)
+    max_segment_length = _local_curve_tolerance(transform) * 8.0
+    segments = max(4, int(math.ceil(radius * angle_span / max_segment_length)))
+    return [
+        (
+            float(center.x + radius * math.cos(start_angle + angle_span * index / segments)),
+            float(center.y + radius * math.sin(start_angle + angle_span * index / segments)),
+        )
+        for index in range(segments + 1)
+    ]
+
+
 def _xy(point) -> tuple[float, float]:
     return (float(point[0]), float(point[1]))
+
+
+def _transform_segments(
+    segments: Sequence[tuple[Point2D, Point2D]],
+    transform: Transform2D,
+) -> list[tuple[Point2D, Point2D]]:
+    return [(_apply_transform(start, transform), _apply_transform(end, transform)) for start, end in segments]
+
+
+def _local_curve_tolerance(transform: Transform2D, model_tolerance: float = 10.0) -> float:
+    a, b, c, d, _e, _f = transform
+    x_scale = math.hypot(a, c)
+    y_scale = math.hypot(b, d)
+    scale = max(x_scale, y_scale, 1.0)
+    return max(0.001, model_tolerance / scale)
+
+
+def _insert_transform(entity) -> Transform2D:
+    insert = _xy(entity.dxf.insert)
+    x_scale = float(entity.dxf.get("xscale", 1.0))
+    y_scale = float(entity.dxf.get("yscale", 1.0))
+    rotation = math.radians(float(entity.dxf.get("rotation", 0.0)))
+    c = math.cos(rotation)
+    s = math.sin(rotation)
+    return (
+        c * x_scale,
+        -s * y_scale,
+        s * x_scale,
+        c * y_scale,
+        insert[0],
+        insert[1],
+    )
+
+
+def _apply_transform(point: Point2D, transform: Transform2D) -> Point2D:
+    a, b, c, d, e, f = transform
+    x, y = point
+    return (a * x + b * y + e, c * x + d * y + f)
+
+
+def _compose_transform(parent: Transform2D, child: Transform2D) -> Transform2D:
+    pa, pb, pc, pd, pe, pf = parent
+    ca, cb, cc, cd, ce, cf = child
+    return (
+        pa * ca + pb * cc,
+        pa * cb + pb * cd,
+        pc * ca + pd * cc,
+        pc * cb + pd * cd,
+        pa * ce + pb * cf + pe,
+        pc * ce + pd * cf + pf,
+    )
+
+
+def _is_entity_visible(entity, doc, in_block: bool) -> bool:
+    if bool(entity.dxf.get("invisible", 0)):
+        return False
+
+    layer_name = entity.dxf.layer
+    if in_block and layer_name == "0":
+        return True
+
+    if doc is None or layer_name not in doc.layers:
+        return True
+
+    layer = doc.layers.get(layer_name)
+    return not layer.is_off() and not layer.is_frozen()

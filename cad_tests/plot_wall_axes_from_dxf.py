@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 from time import perf_counter
 
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 from shapely.geometry import MultiLineString
 
@@ -18,7 +19,6 @@ from axis_engine.linework_axis_extractor import (
     infer_wall_thicknesses,
     repair_wall_linework,
 )
-from axis_engine.opening_axis_connector import infer_opening_axes_from_groups
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 
 from cad_tests.dxf_utils import (
@@ -27,6 +27,7 @@ from cad_tests.dxf_utils import (
     read_dxf_line_segment_groups_from_layers,
     read_dxf_line_segments_from_layers,
 )
+from cad_tests.plot_windows_from_dxf import _cluster_bounds, cluster_line_segments
 
 DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\wall_axes_linework.png"
@@ -59,11 +60,10 @@ def parse_args():
     parser.add_argument("--alignment-tolerance", type=float, default=80.0)
     parser.add_argument("--connection-tolerance", type=float, default=160.0)
     parser.add_argument("--opening-layer", action="append", dest="opening_layers")
-    parser.add_argument("--opening-buffer", type=float, default=120.0)
-    parser.add_argument("--opening-axis-tolerance", type=float, default=120.0)
-    parser.add_argument("--opening-endpoint-tolerance", type=float, default=260.0)
-    parser.add_argument("--opening-min-gap", type=float, default=80.0)
-    parser.add_argument("--opening-max-gap", type=float, default=3000.0)
+    parser.add_argument("--opening-cluster-distance", type=float, default=120.0)
+    parser.add_argument("--opening-min-cluster-lines", type=int, default=2)
+    parser.add_argument("--opening-bbox-padding", type=float, default=0.0)
+    parser.add_argument("--opening-max-bbox-size", type=float, default=5000.0)
     parser.add_argument("--show-polygons", action="store_true", help="额外绘制原始线段重构的辅助多边形。")
     parser.add_argument("--show", action="store_true", help="保存后弹出 matplotlib 窗口。")
     return parser.parse_args()
@@ -114,23 +114,19 @@ def main():
         print(f"轴线墙厚分布: {summary}")
 
     opening_lines = []
-    opening_axes = []
+    opening_bboxes = []
     if args.opening_layers:
-        opening_groups = read_dxf_line_segment_groups_from_layers(doc, args.opening_layers)
-        opening_lines = [line for group in opening_groups for line in group]
-        opening_axes = infer_opening_axes_from_groups(
-            axes,
-            opening_groups,
-            opening_buffer=args.opening_buffer,
-            endpoint_tolerance=args.opening_endpoint_tolerance,
-            axis_const_tolerance=args.opening_axis_tolerance,
-            min_gap=args.opening_min_gap,
-            max_gap=args.opening_max_gap,
+        opening_lines = read_dxf_line_segments_from_layers(doc, args.opening_layers)
+        opening_clusters = cluster_line_segments(
+            opening_lines,
+            distance=args.opening_cluster_distance,
+            min_lines=args.opening_min_cluster_lines,
+            max_bbox_size=args.opening_max_bbox_size,
         )
+        opening_bboxes = [_cluster_bounds(cluster, args.opening_bbox_padding) for cluster in opening_clusters]
         print(f"门窗图层: {', '.join(args.opening_layers)}")
-        print(f"门窗图元簇: {len(opening_groups)}")
         print(f"门窗线段: {len(opening_lines)}")
-        print(f"简化门窗线: {len(opening_axes)}")
+        print(f"门窗包围盒: {len(opening_bboxes)}")
 
     wall_polygon = None
     if args.show_polygons:
@@ -149,7 +145,8 @@ def main():
         wall_polygon,
         Path(args.output),
         show=args.show,
-        opening_axes=opening_axes,
+        opening_lines=opening_lines,
+        opening_bboxes=opening_bboxes,
     )
     print(f"输出图片: {Path(args.output)}")
     print(f"总耗时: {perf_counter() - start:.2f}s")
@@ -161,7 +158,8 @@ def plot_result(
     wall_polygon,
     output_path: Path,
     show: bool = False,
-    opening_axes=None,
+    opening_lines=None,
+    opening_bboxes=None,
 ):
     fig, ax = plt.subplots(figsize=(16, 10))
 
@@ -194,15 +192,33 @@ def plot_result(
         ax.plot(x, y, color=color, linewidth=1.6, zorder=10, label=label)
         wall_label_added = True
 
-    opening_label_added = False
-    for line, _thickness in opening_axes or []:
+    opening_line_label_added = False
+    for line in opening_lines or []:
         x, y = line.xy
-        label = "door/window axis" if not opening_label_added else None
-        ax.plot(x, y, color="#ff00ff", linewidth=2.0, linestyle="--", zorder=12, label=label)
-        opening_label_added = True
+        label = "door/window linework" if not opening_line_label_added else None
+        ax.plot(x, y, color="#2e7d32", linewidth=0.9, alpha=0.9, zorder=11, label=label)
+        opening_line_label_added = True
+
+    bbox_label_added = False
+    for minx, miny, maxx, maxy in opening_bboxes or []:
+        label = "door/window bbox" if not bbox_label_added else None
+        rect = patches.Rectangle(
+            (minx, miny),
+            maxx - minx,
+            maxy - miny,
+            fill=False,
+            edgecolor="#ff00ff",
+            linewidth=1.0,
+            linestyle="--",
+            alpha=0.9,
+            zorder=12,
+            label=label,
+        )
+        ax.add_patch(rect)
+        bbox_label_added = True
 
     ax.set_aspect("equal", adjustable="box")
-    ax.set_title("Wall Axes Extracted From Raw Linework")
+    ax.set_title("Wall Axes With Door/Window Linework And Bounding Boxes")
     ax.legend(loc="upper right")
     ax.grid(True, linestyle="--", alpha=0.2)
     ax.tick_params(labelsize=7)
