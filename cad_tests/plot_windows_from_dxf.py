@@ -1,14 +1,11 @@
 import argparse
-import numbers
 import sys
 from collections import Counter
-from collections import deque
 from pathlib import Path
 
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 from shapely.geometry import LineString
-from shapely.strtree import STRtree
 
 # 确保脚本能找到项目根目录下的包
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +18,8 @@ from cad_tests.dxf_utils import (
     read_dxf,
     read_dxf_line_segments_from_layers,
 )
+from axis_engine.opening_clustering import cluster_bounds as _cluster_bounds
+from axis_engine.opening_clustering import cluster_line_segments
 
 DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 
@@ -129,82 +128,6 @@ def main():
     plt.close(fig)
 
 
-def cluster_line_segments(
-    lines: list[LineString],
-    distance: float = 120.0,
-    min_lines: int = 2,
-    max_bbox_size: float = 5000.0,
-) -> list[list[LineString]]:
-    if not lines:
-        return []
-
-    tree = STRtree(lines)
-    visited: set[int] = set()
-    clusters: list[list[LineString]] = []
-
-    for start_index in range(len(lines)):
-        if start_index in visited:
-            continue
-
-        queue = deque([start_index])
-        visited.add(start_index)
-        component_indices = []
-
-        while queue:
-            index = queue.popleft()
-            component_indices.append(index)
-            search_geom = lines[index].buffer(distance, cap_style=2, join_style=2)
-
-            for neighbor_index in _query_tree_indices(tree, lines, search_geom):
-                if neighbor_index in visited:
-                    continue
-                if lines[index].distance(lines[neighbor_index]) > distance:
-                    continue
-
-                visited.add(neighbor_index)
-                queue.append(neighbor_index)
-
-        cluster = [lines[index] for index in component_indices]
-        if not _is_valid_cluster(cluster, min_lines, max_bbox_size):
-            continue
-        clusters.append(cluster)
-
-    return sorted(clusters, key=lambda item: (_cluster_bounds(item)[0], _cluster_bounds(item)[1]))
-
-
-def _is_valid_cluster(cluster: list[LineString], min_lines: int, max_bbox_size: float) -> bool:
-    if len(cluster) < min_lines:
-        return False
-
-    minx, miny, maxx, maxy = _cluster_bounds(cluster)
-    width = maxx - minx
-    height = maxy - miny
-    if width <= 1.0 and height <= 1.0:
-        return False
-    return width <= max_bbox_size and height <= max_bbox_size
-
-
-def _cluster_bounds(cluster: list[LineString], padding: float = 0.0):
-    minx = min(line.bounds[0] for line in cluster) - padding
-    miny = min(line.bounds[1] for line in cluster) - padding
-    maxx = max(line.bounds[2] for line in cluster) + padding
-    maxy = max(line.bounds[3] for line in cluster) + padding
-    return minx, miny, maxx, maxy
-
-
-def _query_tree_indices(tree: STRtree, geoms, geometry) -> list[int]:
-    result = tree.query(geometry)
-    if len(result) == 0:
-        return []
-
-    first = result[0]
-    if isinstance(first, numbers.Integral):
-        return [int(index) for index in result]
-
-    geom_to_index = {id(geom): index for index, geom in enumerate(geoms)}
-    return [geom_to_index[id(geom)] for geom in result]
-
-
 def _print_diagnostics(doc, layer: str, visible_only: bool):
     print("\n诊断信息：按模型空间根实体统计展开结果")
     print(
@@ -228,7 +151,7 @@ def _print_diagnostics(doc, layer: str, visible_only: bool):
                 continue
 
             expanded_types[expanded_entity.dxftype()] += 1
-            for start, end in _entity_segments(expanded_entity, transform):
+            for start, end, _is_arc, _source_type in _entity_segments(expanded_entity, transform):
                 line = LineString([start, end])
                 if line.length >= 1.0:
                     group_lines.append(line)

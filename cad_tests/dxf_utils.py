@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -15,6 +16,13 @@ logging.getLogger("ezdxf").setLevel(logging.ERROR)
 Point2D = tuple[float, float]
 Transform2D = tuple[float, float, float, float, float, float]
 IDENTITY_TRANSFORM: Transform2D = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+@dataclass(frozen=True)
+class DxfLineSegment:
+    line: LineString
+    source_type: str
+    is_arc: bool = False
 
 
 def read_dxf(path: str | Path):
@@ -49,17 +57,34 @@ def read_dxf_line_segments_from_layers(
     min_length: float = 1.0,
     visible_only: bool = False,
 ) -> list[LineString]:
+    return [
+        segment.line
+        for segment in read_dxf_segments_from_layers(
+            doc,
+            layer_names,
+            min_length=min_length,
+            visible_only=visible_only,
+        )
+    ]
+
+
+def read_dxf_segments_from_layers(
+    doc,
+    layer_names: Iterable[str],
+    min_length: float = 1.0,
+    visible_only: bool = False,
+) -> list[DxfLineSegment]:
     layer_set = set(layer_names)
-    lines: list[LineString] = []
+    segments: list[DxfLineSegment] = []
 
     def collect(entity, selected_by_parent: bool, transform: Transform2D):
         if not selected_by_parent and entity.dxf.layer not in layer_set:
             return
 
-        for start, end in _entity_segments(entity, transform):
+        for start, end, is_arc, source_type in _entity_segments(entity, transform):
             line = LineString([start, end])
             if line.length >= min_length:
-                lines.append(line)
+                segments.append(DxfLineSegment(line=line, source_type=source_type, is_arc=is_arc))
 
     for entity in doc.modelspace():
         for expanded_entity, selected_by_parent, transform in _iter_entity_and_nested_virtuals(
@@ -70,7 +95,7 @@ def read_dxf_line_segments_from_layers(
         ):
             collect(expanded_entity, selected_by_parent, transform)
 
-    return lines
+    return segments
 
 
 def read_dxf_line_segment_groups_from_layers(
@@ -93,7 +118,7 @@ def read_dxf_line_segment_groups_from_layers(
             if not selected_by_parent and expanded_entity.dxf.layer not in layer_set:
                 continue
 
-            for start, end in _entity_segments(expanded_entity, transform):
+            for start, end, _is_arc, _source_type in _entity_segments(expanded_entity, transform):
                 line = LineString([start, end])
                 if line.length >= min_length:
                     entity_group.append(line)
@@ -155,27 +180,42 @@ def _iter_entity_and_nested_virtuals(
 def _entity_segments(
     entity,
     transform: Transform2D = IDENTITY_TRANSFORM,
-) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+) -> list[tuple[tuple[float, float], tuple[float, float], bool, str]]:
     entity_type = entity.dxftype()
 
     if entity_type == "LINE":
-        return [(_apply_transform(_xy(entity.dxf.start), transform), _apply_transform(_xy(entity.dxf.end), transform))]
+        return [
+            (
+                _apply_transform(_xy(entity.dxf.start), transform),
+                _apply_transform(_xy(entity.dxf.end), transform),
+                False,
+                entity_type,
+            )
+        ]
 
     if entity_type in {"ARC", "CIRCLE"}:
         sagitta = _local_curve_tolerance(transform)
-        return _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(sagitta)], False)
+        return _tag_segments(
+            _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(sagitta)], False),
+            is_arc=True,
+            source_type=entity_type,
+        )
 
     if entity_type == "ELLIPSE":
         distance = _local_curve_tolerance(transform)
-        return _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(distance)], False)
+        return _tag_segments(
+            _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(distance)], False),
+            is_arc=True,
+            source_type=entity_type,
+        )
 
     if entity_type == "LWPOLYLINE":
         points = [((float(x), float(y)), float(bulge)) for x, y, _start_width, _end_width, bulge in entity.get_points("xyseb")]
-        return _transform_segments(_segments_from_bulged_points(points, bool(entity.closed), transform), transform)
+        return _segments_from_bulged_points(points, bool(entity.closed), transform, source_type=entity_type)
 
     if entity_type == "POLYLINE":
         points = [(_xy(vertex.dxf.location), float(vertex.dxf.get("bulge", 0.0))) for vertex in entity.vertices]
-        return _transform_segments(_segments_from_bulged_points(points, bool(entity.is_closed), transform), transform)
+        return _segments_from_bulged_points(points, bool(entity.is_closed), transform, source_type=entity_type)
 
     return []
 
@@ -191,6 +231,7 @@ def _segments_from_bulged_points(
     points: Sequence[tuple[tuple[float, float], float]],
     closed: bool,
     transform: Transform2D = IDENTITY_TRANSFORM,
+    source_type: str = "POLYLINE",
 ):
     if len(points) < 2:
         return []
@@ -202,11 +243,17 @@ def _segments_from_bulged_points(
 
     for (start, bulge), (end, _next_bulge) in pairs:
         if abs(bulge) < 1e-12:
-            segments.append((start, end))
+            segments.append((_apply_transform(start, transform), _apply_transform(end, transform), False, source_type))
             continue
 
         arc_points = _bulge_arc_points(start, end, bulge, transform)
-        segments.extend(_segments_from_points(arc_points, False))
+        segments.extend(
+            _tag_segments(
+                _transform_segments(_segments_from_points(arc_points, False), transform),
+                is_arc=True,
+                source_type=source_type,
+            )
+        )
 
     return segments
 
@@ -239,6 +286,14 @@ def _transform_segments(
     transform: Transform2D,
 ) -> list[tuple[Point2D, Point2D]]:
     return [(_apply_transform(start, transform), _apply_transform(end, transform)) for start, end in segments]
+
+
+def _tag_segments(
+    segments: Sequence[tuple[Point2D, Point2D]],
+    is_arc: bool,
+    source_type: str,
+) -> list[tuple[Point2D, Point2D, bool, str]]:
+    return [(start, end, is_arc, source_type) for start, end in segments]
 
 
 def _local_curve_tolerance(transform: Transform2D, model_tolerance: float = 10.0) -> float:

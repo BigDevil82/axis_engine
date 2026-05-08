@@ -20,15 +20,15 @@ from axis_engine.linework_axis_extractor import (
     repair_wall_linework,
 )
 from axis_engine.opening_embedment import infer_opening_embedments, unmatched_opening_indices
+from axis_engine.opening_clustering import cluster_bounds, cluster_opening_segments
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 
 from cad_tests.dxf_utils import (
     pick_dxf_wall_layers,
     read_dxf,
-    read_dxf_line_segment_groups_from_layers,
     read_dxf_line_segments_from_layers,
+    read_dxf_segments_from_layers,
 )
-from cad_tests.plot_windows_from_dxf import _cluster_bounds, cluster_line_segments
 
 DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\wall_axes_linework.png"
@@ -127,14 +127,17 @@ def main():
     opening_bboxes = []
     opening_embedments = []
     if args.opening_layers:
-        opening_lines = read_dxf_line_segments_from_layers(doc, args.opening_layers)
-        opening_clusters = cluster_line_segments(
-            opening_lines,
+        opening_segments = read_dxf_segments_from_layers(doc, args.opening_layers)
+        opening_lines = [segment.line for segment in opening_segments]
+        opening_clusters = cluster_opening_segments(
+            opening_segments,
             distance=args.opening_cluster_distance,
-            min_lines=args.opening_min_cluster_lines,
+            min_segments=args.opening_min_cluster_lines,
             max_bbox_size=args.opening_max_bbox_size,
         )
-        opening_bboxes = [_cluster_bounds(cluster, args.opening_bbox_padding) for cluster in opening_clusters]
+        opening_bboxes = [
+            cluster_bounds(cluster.lines, args.opening_bbox_padding) for cluster in opening_clusters
+        ]
         print(f"门窗图层: {', '.join(args.opening_layers)}")
         print(f"门窗线段: {len(opening_lines)}")
         print(f"门窗包围盒: {len(opening_bboxes)}")
@@ -203,14 +206,6 @@ def plot_result(
         x, y = line.xy
         ax.plot(x, y, color="#9aa0a6", linewidth=0.5, alpha=1, zorder=3)
 
-    colors = {
-        50.0: "#7b1fa2",
-        100.0: "#1976d2",
-        150.0: "#00796b",
-        200.0: "#d32f2f",
-        250.0: "#f57c00",
-        300.0: "#455a64",
-    }
     wall_label_added = False
     for line, thickness in axes:
         x, y = line.xy
@@ -220,30 +215,23 @@ def plot_result(
         ax.plot(x, y, color=color, linewidth=1.6, zorder=10, label=label)
         wall_label_added = True
 
-    opening_line_label_added = False
-    # for line in opening_lines or []:
-    #     x, y = line.xy
-    #     label = "door/window linework" if not opening_line_label_added else None
-    #     ax.plot(x, y, color="#2e7d32", linewidth=0.9, alpha=0.9, zorder=11, label=label)
-    #     opening_line_label_added = True
-
     bbox_label_added = False
-    for minx, miny, maxx, maxy in opening_bboxes or []:
-        label = "door/window bbox" if not bbox_label_added else None
-        rect = patches.Rectangle(
-            (minx, miny),
-            maxx - minx,
-            maxy - miny,
-            fill=False,
-            edgecolor="#ff00ff",
-            linewidth=1.0,
-            linestyle="--",
-            alpha=0.9,
-            zorder=12,
-            label=label,
-        )
-        ax.add_patch(rect)
-        bbox_label_added = True
+    # for minx, miny, maxx, maxy in opening_bboxes or []:
+    #     label = "door/window bbox" if not bbox_label_added else None
+    #     rect = patches.Rectangle(
+    #         (minx, miny),
+    #         maxx - minx,
+    #         maxy - miny,
+    #         fill=False,
+    #         edgecolor="#ff00ff",
+    #         linewidth=1.0,
+    #         linestyle="--",
+    #         alpha=0.9,
+    #         zorder=12,
+    #         label=label,
+    #     )
+    #     ax.add_patch(rect)
+    #     bbox_label_added = True
 
     embedment_colors = {
         "door": "#00acc1",
@@ -294,12 +282,17 @@ def _print_unmatched_openings(opening_clusters, opening_embedments):
     unmatched = unmatched_opening_indices(len(opening_clusters), opening_embedments)
     print(f"未匹配门窗: {len(unmatched)}")
     for index in unmatched[:50]:
-        minx, miny, maxx, maxy = _cluster_bounds(opening_clusters[index])
+        lines = (
+            opening_clusters[index].lines
+            if hasattr(opening_clusters[index], "lines")
+            else opening_clusters[index]
+        )
+        minx, miny, maxx, maxy = cluster_bounds(lines)
         print(
             f"  opening#{index}: "
             f"bounds=({minx:.1f}, {miny:.1f}, {maxx:.1f}, {maxy:.1f}), "
             f"size=({maxx - minx:.1f} x {maxy - miny:.1f}), "
-            f"lines={len(opening_clusters[index])}"
+            f"lines={len(lines)}"
         )
 
 

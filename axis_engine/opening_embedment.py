@@ -8,6 +8,7 @@ from shapely.geometry import LineString, MultiLineString, Point, box
 from shapely.ops import unary_union
 
 from axis_engine.linework_axis_extractor import extract_wall_axes_from_linework
+from axis_engine.opening_clustering import OpeningCluster, cluster_bounds
 
 Point2D = tuple[float, float]
 
@@ -49,7 +50,7 @@ class ArcFeature:
 
 def infer_opening_embedments(
     wall_axes: Sequence[tuple[LineString, float]],
-    opening_groups: Sequence[Sequence[LineString]],
+    opening_groups: Sequence[OpeningCluster | Sequence[LineString]],
     search_distance: float = 700.0,
     bbox_padding: float = 0.0,
     min_embed_length: float = 80.0,
@@ -73,7 +74,8 @@ def infer_opening_embedments(
     wall_axis_lines = [axis for axis, _thickness in wall_axes]
 
     for opening_index, group in enumerate(opening_groups):
-        opening_lines = [line for line in group if line.length > 0]
+        opening_cluster = _coerce_opening_cluster(group)
+        opening_lines = [line for line in opening_cluster.lines if line.length > 0]
         if not opening_lines:
             continue
 
@@ -81,7 +83,7 @@ def infer_opening_embedments(
         opening_bounds = _bounds(opening_lines, bbox_padding)
         bbox_geom = box(*opening_bounds)
         search_geom = bbox_geom.buffer(search_distance, cap_style=2, join_style=2)
-        opening_type, candidate_points = classify_opening_group(opening_lines, wall_axis_lines)
+        opening_type, candidate_points = classify_opening_group(opening_cluster, wall_axis_lines)
         candidates = [
             endpoint
             for endpoint in endpoints
@@ -145,19 +147,34 @@ def unmatched_opening_indices(opening_count: int, embedments: Sequence[OpeningEm
     return [index for index in range(opening_count) if index not in matched]
 
 
+def _coerce_opening_cluster(opening_group: OpeningCluster | Sequence[LineString]) -> OpeningCluster:
+    if isinstance(opening_group, OpeningCluster):
+        return opening_group
+
+    from cad_tests.dxf_utils import DxfLineSegment
+
+    return OpeningCluster(
+        tuple(DxfLineSegment(line=line, source_type="UNKNOWN", is_arc=False) for line in opening_group)
+    )
+
+
 def classify_opening_group(
-    opening_lines: Sequence[LineString],
+    opening_group: OpeningCluster | Sequence[LineString],
     wall_axis_lines: Sequence[LineString] = (),
 ) -> tuple[str, tuple[Point2D, ...]]:
-    bounds = _bounds(opening_lines)
+    opening_cluster = _coerce_opening_cluster(opening_group)
+    opening_lines = opening_cluster.lines
+    bounds = opening_cluster.bounds
     width = bounds[2] - bounds[0]
     height = bounds[3] - bounds[1]
     ratio = max(width, height) / max(min(width, height), 1.0)
-    arcs = _detect_arc_features(opening_lines)
+    arcs = _detect_arc_features(opening_cluster.arc_lines or opening_lines)
 
-    if arcs:
+    if opening_cluster.has_arc or arcs:
         points = [arc.center for arc in arcs[:2]]
-        if len(points) == 1:
+        if len(points) == 0:
+            points = _arc_edge_candidate_points(opening_cluster.arc_lines, bounds)
+        elif len(points) == 1:
             points = _single_arc_door_candidate_points(arcs[0], bounds, wall_axis_lines)
         return OPENING_DOOR, tuple(points[:2])
 
@@ -469,6 +486,26 @@ def _arc_point_near_wall_axis(arc: ArcFeature, wall_axis_lines: Sequence[LineStr
     return best_point
 
 
+def _arc_edge_candidate_points(
+    arc_lines: Sequence[LineString],
+    bounds: tuple[float, float, float, float],
+) -> list[Point2D]:
+    if not arc_lines:
+        minx, miny, maxx, _maxy = bounds
+        return [(minx, miny), (maxx, miny)]
+
+    return _single_arc_door_candidate_points(
+        ArcFeature(
+            center=_bounds_center(cluster_bounds(arc_lines)),
+            points=tuple(_unique_component_points(arc_lines, tolerance=5.0)),
+            radius=0.0,
+            residual=0.0,
+        ),
+        bounds,
+        (),
+    )
+
+
 def _single_arc_door_candidate_points(
     arc: ArcFeature,
     bounds: tuple[float, float, float, float],
@@ -619,11 +656,11 @@ def _endpoints_are_aligned(
 
 
 def _bounds(lines: Sequence[LineString], padding: float = 0.0) -> tuple[float, float, float, float]:
-    minx = min(line.bounds[0] for line in lines) - padding
-    miny = min(line.bounds[1] for line in lines) - padding
-    maxx = max(line.bounds[2] for line in lines) + padding
-    maxy = max(line.bounds[3] for line in lines) + padding
-    return minx, miny, maxx, maxy
+    return cluster_bounds(lines, padding)
+
+
+def _bounds_center(bounds: tuple[float, float, float, float]) -> Point2D:
+    return ((bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0)
 
 
 def _endpoint_pair_key(
@@ -687,29 +724,6 @@ def _orthogonal_line_from_candidate_direction(
     dx = abs(candidate_points[1][0] - candidate_points[0][0])
     dy = abs(candidate_points[1][1] - candidate_points[0][1])
     if dx >= dy:
-        y = (first[1] + second[1]) / 2.0
-        return LineString([(first[0], y), (second[0], y)])
-    x = (first[0] + second[0]) / 2.0
-    return LineString([(x, first[1]), (x, second[1])])
-
-
-def _nearest_endpoint(
-    point: Point2D,
-    endpoints: Sequence[WallAxisEndpoint],
-    max_distance: float,
-) -> WallAxisEndpoint | None:
-    best: tuple[float, WallAxisEndpoint] | None = None
-    for endpoint in endpoints:
-        distance = _distance(point, endpoint.point)
-        if distance > max_distance:
-            continue
-        if best is None or distance < best[0]:
-            best = (distance, endpoint)
-    return None if best is None else best[1]
-
-
-def _orthogonal_line(first: Point2D, second: Point2D, direction: str) -> LineString:
-    if direction == "h":
         y = (first[1] + second[1]) / 2.0
         return LineString([(first[0], y), (second[0], y)])
     x = (first[0] + second[0]) / 2.0
