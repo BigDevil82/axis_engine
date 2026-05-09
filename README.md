@@ -18,3 +18,8 @@
 - `plot_wall_axes_from_dxf.py`：墙轴线提取验证。
 - `plot_windows_from_dxf.py`：门窗聚类与嵌入线验证。
 - `plot_constraint_calibration.py`：约束校准验证。
+
+## 结构说明（重构后）
+
+- `cad_processor.py`：流程编排与状态管理。
+- `room_generation.py`：房间生成服务（校准 + polygonize + 矩形分解）。

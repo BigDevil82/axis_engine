@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Sequence
 
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
-from shapely.ops import polygonize
 
 from axis_engine.geometry_utils import iter_lines, iter_straight_segments
 from axis_engine.dxf_utils import (
@@ -27,8 +26,8 @@ from axis_engine.opening_embedment import (
     infer_opening_embedments,
 )
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
-from .line_network_calibrator import LineNetworkCalibrator, NetworkSegment, SegmentType
-from .rect_decomposer import RectangularDecomposer
+from .line_network_calibrator import NetworkSegment, SegmentType
+from .room_generation import generate_rooms_from_segments
 
 
 @dataclass
@@ -208,18 +207,13 @@ class CADLayoutProcessor:
         if not self._geometry_built:
             raise RuntimeError("Geometry is not built. Run build_geometry() first.")
         self.all_segments = self.collect_network_segments()
-        calibrator = LineNetworkCalibrator(structural_thickness_threshold=300.0)
-        self.unified_network = calibrator.calibrate(self.all_segments)
-
-        polys = list(polygonize(self.unified_network))
-        decomposer = RectangularDecomposer()
-        valid_rooms: list[Polygon] = []
-        self.room_groups = []
-        for polygon in polys:
-            sub_rects = decomposer.decompose(polygon)
-            valid_rooms.extend(sub_rects)
-            self.room_groups.append(sub_rects)
-        self.rooms = valid_rooms
+        result = generate_rooms_from_segments(
+            self.all_segments,
+            structural_thickness_threshold=300.0,
+        )
+        self.unified_network = result.unified_network
+        self.room_groups = result.room_groups
+        self.rooms = result.rooms
         if not self.rooms:
             raise RuntimeError("Room generation produced no valid rooms.")
         return self.rooms
