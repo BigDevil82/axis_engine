@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import List
 
 import matplotlib.cm as cm
@@ -11,11 +12,51 @@ from shapely.geometry.polygon import orient
 from shapely.ops import linemerge, polygonize, unary_union
 from shapely.strtree import STRtree
 
+from axis_engine.linework_axis_extractor import (
+    extract_wall_axes_from_linework,
+    infer_wall_thicknesses,
+    repair_wall_linework,
+)
+from axis_engine.opening_clustering import cluster_opening_segments
+from axis_engine.opening_embedment import (
+    OPENING_BALCONY,
+    OPENING_DOOR,
+    infer_opening_embedments,
+)
+from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
+from cad_tests.dxf_utils import (
+    pick_dxf_wall_layers,
+    read_dxf,
+    read_dxf_line_segments_from_layers,
+    read_dxf_segments_from_layers,
+)
+
 from .line_network_calibrator import LineNetworkCalibrator, NetworkSegment, SegmentType
 from .rect_decomposer import RectangularDecomposer
 from .wall_centerline import extract_mixed_thickness_walls, visualize_wall_extraction
 
 # from preprocess.wall_centerline import extract_wall_centerline
+
+
+def _iter_lines(geometry):
+    if isinstance(geometry, LineString):
+        return [geometry]
+    if isinstance(geometry, MultiLineString):
+        return list(geometry.geoms)
+    if hasattr(geometry, "geoms"):
+        return [item for geom in geometry.geoms for item in _iter_lines(geom)]
+    return []
+
+
+def _iter_straight_segments(geometry, min_length=1.0):
+    for line in _iter_lines(geometry):
+        coords = list(line.coords)
+        if len(coords) < 2:
+            continue
+        for start, end in zip(coords, coords[1:]):
+            segment = LineString([start, end])
+            if segment.length >= min_length:
+                yield segment
 
 
 def _remove_collinear_vertices(coords):
@@ -140,17 +181,40 @@ def form_polygons_from_cluster(line_cluster):
 
 
 class CADLayoutProcessor:
-    def __init__(self, json_path):
-        self.json_path = json_path
-        self.raw_data = self._load_json()
+    def __init__(
+        self,
+        source_path,
+        wall_layers=None,
+        opening_layers=None,
+        wall_thicknesses=None,
+        visible_only: bool = False,
+        wall_axis_options=None,
+        opening_cluster_options=None,
+        embedment_options=None,
+    ):
+        self.source_path = Path(source_path)
+        self.json_path = str(self.source_path)
+        self.is_dxf = self.source_path.suffix.lower() == ".dxf"
+        self.wall_layers = wall_layers
+        self.opening_layers = list(opening_layers or ["WINDOW"])
+        self.wall_thicknesses = wall_thicknesses
+        self.visible_only = visible_only
+        self.wall_axis_options = dict(wall_axis_options or {})
+        self.opening_cluster_options = dict(opening_cluster_options or {})
+        self.embedment_options = dict(embedment_options or {})
+        self.raw_data = {} if self.is_dxf else self._load_json()
 
         # 几何数据容器
         self.wall_polygon = MultiPolygon()  # 重构后的墙体多边形
         self.wall_centerlines = []  # 计算出的墙体中轴线，改为列表存储 (LineString, thickness)
         self.components = {}  # 其他构件 (门窗梁) 的 LineStrings
+        self.opening_clusters = []
+        self.opening_embedments = []
+        self.wall_lines = []
+        self.opening_lines = []
 
     def _load_json(self):
-        with open(self.json_path, "r", encoding="utf-8") as f:
+        with open(self.source_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     def _parse_segments_to_lines(self, component_list, precision=0):
@@ -258,6 +322,10 @@ class CADLayoutProcessor:
 
     def build_geometry(self):
         """步骤 1: 将散乱的线段构建为几何对象"""
+        if self.is_dxf:
+            self._build_geometry_from_dxf()
+            return
+
         print("正在构建几何对象...")
 
         # 1. 处理墙体 (Walls) -> 重构为闭合多边形
@@ -286,8 +354,101 @@ class CADLayoutProcessor:
                 self.components[comp_type] = MultiLineString(lines) if lines else MultiLineString()
                 print(f"  - {comp_type}: 加载了 {len(lines)} 条线段")
 
+    def _build_geometry_from_dxf(self):
+        """从 DXF 读取墙体和门窗图层，并直接构建单线语义网络。"""
+        print("正在从 DXF 构建单线几何对象...")
+        doc = read_dxf(self.source_path)
+
+        wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
+        self.wall_layers = wall_layers
+        self.wall_lines = read_dxf_line_segments_from_layers(
+            doc,
+            wall_layers,
+            visible_only=self.visible_only,
+        )
+        print(f"  - 墙体图层: {', '.join(wall_layers)}")
+        print(f"  - 原始墙体线段: {len(self.wall_lines)}")
+
+        repair_options = {
+            key: self.wall_axis_options[key]
+            for key in ("axis_tolerance", "snap_tolerance")
+            if key in self.wall_axis_options
+        }
+        if "min_feature_len" in self.wall_axis_options:
+            repair_options["min_segment_length"] = self.wall_axis_options["min_feature_len"]
+        repaired_edges = repair_wall_linework(self.wall_lines, **repair_options)
+        thicknesses = self.wall_thicknesses or infer_wall_thicknesses(repaired_edges)
+        self.wall_thicknesses = thicknesses
+        self.wall_centerlines = extract_wall_axes_from_linework(
+            self.wall_lines,
+            thickness_candidates=thicknesses,
+            **self.wall_axis_options,
+        )
+        print(f"  - 墙轴线: {len(self.wall_centerlines)}")
+
+        self.wall_polygon = build_wall_polygon_from_raw_lines(
+            self.wall_lines,
+            wall_thicknesses=thicknesses,
+        )
+        polygon_count = len(self.wall_polygon.geoms) if not self.wall_polygon.is_empty else 0
+        print(f"  - 辅助墙体面: {polygon_count}")
+
+        self.components["doors"] = MultiLineString()
+        self.components["windows"] = MultiLineString()
+        self.components["balconies"] = MultiLineString()
+
+        if not self.opening_layers:
+            return
+
+        opening_segments = read_dxf_segments_from_layers(
+            doc,
+            self.opening_layers,
+            visible_only=self.visible_only,
+        )
+        self.opening_lines = [segment.line for segment in opening_segments]
+        self.opening_clusters = cluster_opening_segments(
+            opening_segments,
+            **self.opening_cluster_options,
+        )
+        self.opening_embedments = infer_opening_embedments(
+            self.wall_centerlines,
+            self.opening_clusters,
+            **self.embedment_options,
+        )
+        self._load_opening_embedments_as_components()
+
+        print(f"  - 门窗图层: {', '.join(self.opening_layers)}")
+        print(f"  - 门窗原始线段: {len(self.opening_lines)}")
+        print(f"  - 门窗基元组: {len(self.opening_clusters)}")
+        print(f"  - 门窗嵌入线: {len(self.opening_embedments)}")
+
+    def _load_opening_embedments_as_components(self):
+        by_component = {
+            "doors": [],
+            "windows": [],
+            "balconies": [],
+        }
+        for embedment in self.opening_embedments:
+            lines = _iter_lines(embedment.embed_line)
+            if embedment.opening_type == OPENING_DOOR:
+                by_component["doors"].extend(lines)
+            elif embedment.opening_type == OPENING_BALCONY:
+                by_component["balconies"].extend(lines)
+            else:
+                by_component["windows"].extend(lines)
+
+        for component_name, lines in by_component.items():
+            self.components[component_name] = MultiLineString(lines) if lines else MultiLineString()
+
     def extract_centerlines(self):
         """步骤 2: 提取墙体中轴线"""
+        if self.is_dxf:
+            if self.wall_centerlines:
+                print(f"墙轴线已由 DXF 线网流程提取: {len(self.wall_centerlines)} 条")
+            else:
+                print("警告: DXF 流程尚未生成墙轴线，请先执行 build_geometry()。")
+            return
+
         if self.wall_polygon.is_empty:
             print("警告: 没有有效的墙体多边形，无法提取中轴线。")
             return
@@ -339,6 +500,7 @@ class CADLayoutProcessor:
         style_map = {
             "doors": {"color": "blue", "lw": 2.5, "label": "Doors"},
             "windows": {"color": "green", "lw": 2.0, "label": "Windows"},  # 改为绿色区分
+            "balconies": {"color": "#f57c00", "lw": 2.0, "label": "Balconies"},
             "beams": {"color": "orange", "lw": 1.5, "linestyle": "--", "label": "Beams"},
         }
 
@@ -386,34 +548,42 @@ class CADLayoutProcessor:
         self.all_segments: List[NetworkSegment] = []
 
         for line, thickness in self.wall_centerlines:
-            seg = NetworkSegment(
-                geometry=line,
+            self._append_network_segments(
+                line,
                 thickness=thickness,
                 seg_type=SegmentType.WALL,
-                is_structural=(
-                    True if thickness >= 180.0 else False
-                ),  # 暂时全设为True以建立强网格，或根据长度判断
+                is_structural=(True if thickness >= 180.0 else False),
             )
-            self.all_segments.append(seg)
 
         # B. 添加门 (Doors)
         if "doors" in self.components:
             for line in self.components["doors"].geoms:
-                seg = NetworkSegment(
-                    geometry=line,
+                self._append_network_segments(
+                    line,
                     thickness=100.0,  # 门通常依附于墙，厚度不重要，重要的是位置
                     seg_type=SegmentType.DOOR,
                     is_structural=False,
                 )
-                self.all_segments.append(seg)
 
         # C. 添加窗 (Windows)
         if "windows" in self.components:
             for line in self.components["windows"].geoms:
-                seg = NetworkSegment(
-                    geometry=line, thickness=100.0, seg_type=SegmentType.WINDOW, is_structural=False
+                self._append_network_segments(
+                    line,
+                    thickness=100.0,
+                    seg_type=SegmentType.WINDOW,
+                    is_structural=False,
                 )
-                self.all_segments.append(seg)
+
+        # D. 添加阳台/飘窗轴线，当前房间生成阶段按非结构开口处理
+        if "balconies" in self.components:
+            for line in self.components["balconies"].geoms:
+                self._append_network_segments(
+                    line,
+                    thickness=100.0,
+                    seg_type=SegmentType.WINDOW,
+                    is_structural=False,
+                )
 
         # 2. 初始化校准器
         calibrator = LineNetworkCalibrator(structural_thickness_threshold=300.0)
@@ -425,9 +595,12 @@ class CADLayoutProcessor:
         # 4. 生成房间多边形 (Polygonize)
         # polygonize 会寻找所有最小闭合环
         polys = list(polygonize(self.unified_network))
-        visualize_wall_extraction(
-            MultiPolygon(polys), None, title="Initial Polygons from Unified Network"
-        )  # for debug
+        # visualize_wall_extraction(
+        #     MultiPolygon(polys),
+        #     None,
+        #     title="Initial Polygons from Unified Network",
+        #     show=False,
+        # )  # for debug
 
         # 5. 过滤无效区域 (如面积过小的碎块)
         valid_rooms = []
@@ -441,24 +614,40 @@ class CADLayoutProcessor:
         self.rooms = valid_rooms
         print(f"  - 房间生成完成: 识别到 {len(self.rooms)} 个房间")
 
-    def visualize_rooms(self):
+    def _append_network_segments(self, geometry, thickness, seg_type, is_structural=False):
+        for line in _iter_straight_segments(geometry):
+            self.all_segments.append(
+                NetworkSegment(
+                    geometry=line,
+                    thickness=thickness,
+                    seg_type=seg_type,
+                    is_structural=is_structural,
+                )
+            )
+
+    def visualize_rooms(self, save_path=None, show=True):
         """可视化生成的房间"""
         fig, ax = plt.subplots(figsize=(12, 12))
 
         # 绘制房间填充
         import matplotlib.cm as cm
 
-        colors = cm.rainbow(np.linspace(0, 1, len(self.rooms)))
+        groups = (
+            self.room_groups
+            if hasattr(self, "room_groups") and self.room_groups
+            else [[room] for room in self.rooms]
+        )
+        colors = cm.rainbow(np.linspace(0, 1, len(groups)))
 
-        for i, room in enumerate(self.rooms):
-            x, y = room.exterior.xy
-            # 随机颜色填充房间
-            ax.fill(x, y, color=colors[i], alpha=0.5, label=f"Room {i+1}")
-            # 房间边框
-            ax.plot(x, y, color="black", linewidth=1.5)
+        for i, group in enumerate(groups):
+            color = colors[i]
+            group_geom = unary_union(group)
+            for room in group:
+                x, y = room.exterior.xy
+                ax.fill(x, y, color=color, alpha=0.5)
+                ax.plot(x, y, color="black", linewidth=1.5)
 
-            # 在中心标记ID
-            cx, cy = room.centroid.x, room.centroid.y
+            cx, cy = group_geom.centroid.x, group_geom.centroid.y
             ax.text(cx, cy, str(i + 1), fontsize=12, ha="center", fontweight="bold", color="black")
 
         # 绘制原始网络作为参考 (灰色虚线)
@@ -469,7 +658,13 @@ class CADLayoutProcessor:
 
         ax.set_title("Generated Room Layout", fontsize=15)
         ax.set_aspect("equal")
-        plt.show()
+        if save_path:
+            plt.savefig(save_path, bbox_inches="tight", dpi=300)
+            print(f"Room visualization saved to {save_path}")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
 
     def visualize_final_layout(self, save_path=None):
         """
@@ -575,12 +770,11 @@ class CADLayoutProcessor:
 # =============================================================================
 
 if __name__ == "__main__":
-    # 替换为你的 JSON 文件路径
-    json_file = r"E:/Common/Desktop/building_components.json"
-    # json_file = r"E:\Common\Desktop\Research\deepLearning\codes\Png2Dxf\data\dxf\cad_json_data\archi_comp.json"
+    # DXF 文件路径；传入 JSON 时仍保留旧流程。
+    cad_file = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 
     # 实例化处理流程
-    processor = CADLayoutProcessor(json_file)
+    processor = CADLayoutProcessor(cad_file, opening_layers=["WINDOW"])
 
     # 1. 构建几何 (将墙体线段转为面)
     processor.build_geometry()

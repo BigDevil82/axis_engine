@@ -42,6 +42,8 @@ class LineNetworkCalibrator:
             raw_segments: [(LineString, thickness), ...] 的列表
         """
 
+        raw_segments = self._explode_to_straight_segments(raw_segments)
+
         # 2. 建立主导网格 (仅使用承重墙)
         self._build_grid_from_structural(raw_segments)
 
@@ -68,6 +70,26 @@ class LineNetworkCalibrator:
         final_network = self._stitch_connectivity(line_list, extension_dist=self.struct_thresh)
 
         return final_network
+
+    def _explode_to_straight_segments(self, segments: List[NetworkSegment]) -> List[NetworkSegment]:
+        straight_segments: List[NetworkSegment] = []
+        for seg in segments:
+            coords = list(seg.geometry.coords)
+            if len(coords) < 2:
+                continue
+            for start, end in zip(coords, coords[1:]):
+                line = LineString([start, end])
+                if line.length <= 1e-6:
+                    continue
+                straight_segments.append(
+                    NetworkSegment(
+                        geometry=line,
+                        thickness=seg.thickness,
+                        seg_type=seg.seg_type,
+                        is_structural=seg.is_structural,
+                    )
+                )
+        return straight_segments
 
     def _build_grid_from_structural(self, segments: List[NetworkSegment]):
         """

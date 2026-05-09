@@ -10,7 +10,6 @@ import ezdxf
 from ezdxf.math import bulge_to_arc
 from shapely.geometry import LineString
 
-
 logging.getLogger("ezdxf").setLevel(logging.ERROR)
 
 Point2D = tuple[float, float]
@@ -77,79 +76,56 @@ def read_dxf_segments_from_layers(
     layer_set = set(layer_names)
     segments: list[DxfLineSegment] = []
 
-    def collect(entity, selected_by_parent: bool, transform: Transform2D):
-        if not selected_by_parent and entity.dxf.layer not in layer_set:
+    def collect(entity, transform: Transform2D, effective_layer: str):
+        # 用有效图层判断（已处理 0 图层继承）
+        if effective_layer not in layer_set:
             return
-
+        if getattr(entity.dxf, "invisible", 0):
+            return
         for start, end, is_arc, source_type in _entity_segments(entity, transform):
             line = LineString([start, end])
             if line.length >= min_length:
                 segments.append(DxfLineSegment(line=line, source_type=source_type, is_arc=is_arc))
 
     for entity in doc.modelspace():
-        for expanded_entity, selected_by_parent, transform in _iter_entity_and_nested_virtuals(
+        for expanded_entity, transform, effective_layer in _iter_entity_and_nested_virtuals(
             entity,
             layer_set,
             doc=doc,
             visible_only=visible_only,
         ):
-            collect(expanded_entity, selected_by_parent, transform)
+            collect(expanded_entity, transform, effective_layer)
 
     return segments
-
-
-def read_dxf_line_segment_groups_from_layers(
-    doc,
-    layer_names: Iterable[str],
-    min_length: float = 1.0,
-    visible_only: bool = False,
-) -> list[list[LineString]]:
-    layer_set = set(layer_names)
-    groups: list[list[LineString]] = []
-
-    for entity in doc.modelspace():
-        entity_group: list[LineString] = []
-        for expanded_entity, selected_by_parent, transform in _iter_entity_and_nested_virtuals(
-            entity,
-            layer_set,
-            doc=doc,
-            visible_only=visible_only,
-        ):
-            if not selected_by_parent and expanded_entity.dxf.layer not in layer_set:
-                continue
-
-            for start, end, _is_arc, _source_type in _entity_segments(expanded_entity, transform):
-                line = LineString([start, end])
-                if line.length >= min_length:
-                    entity_group.append(line)
-
-        if entity_group:
-            groups.append(entity_group)
-
-    return groups
 
 
 def _iter_entity_and_nested_virtuals(
     entity,
     selected_layers: set[str] | None = None,
-    parent_selected: bool = False,
     max_depth: int = 8,
     doc=None,
     visible_only: bool = False,
     in_block: bool = False,
     transform: Transform2D = IDENTITY_TRANSFORM,
     visited_blocks: frozenset[str] = frozenset(),
+    parent_layer: str | None = None,  # ← 新增：上级 INSERT 的图层
 ):
     selected_layers = selected_layers or set()
+
     if visible_only and not _is_entity_visible(entity, doc, in_block):
         return
 
-    selected = parent_selected or entity.dxf.layer in selected_layers
-    yield entity, parent_selected, transform
+    # 计算有效图层：
+    #   - 图元本身不在 0 图层 → 用自身图层
+    #   - 图元在 0 图层且有父级 INSERT → 继承父级图层
+    #   - 图元在 0 图层且无父级（顶层） → 保留 "0"（不会命中业务图层，自然过滤）
+    own_layer = entity.dxf.layer
+    effective_layer = parent_layer if (own_layer == "0" and parent_layer is not None) else own_layer
+
+    yield entity, transform, effective_layer
 
     if max_depth <= 0 or entity.dxftype() != "INSERT":
         return
-
     if doc is None:
         return
 
@@ -161,19 +137,28 @@ def _iter_entity_and_nested_virtuals(
     except Exception:
         return
 
+    # 匿名块（尺寸、填充等）跳过
+    if block_name.startswith("*"):
+        return
+
     next_transform = _compose_transform(transform, _insert_transform(entity))
     next_visited = visited_blocks | {block_name}
+
+    # 将本 INSERT 的有效图层作为子图元的 parent_layer 传递下去
     for virtual_entity in block:
+        # 跳过属性定义模板和序列结束标记
+        if virtual_entity.dxftype() in ("ATTDEF", "SEQEND"):
+            continue
         yield from _iter_entity_and_nested_virtuals(
             virtual_entity,
             selected_layers=selected_layers,
-            parent_selected=selected,
             max_depth=max_depth - 1,
             doc=doc,
             visible_only=visible_only,
             in_block=True,
             transform=next_transform,
             visited_blocks=next_visited,
+            parent_layer=effective_layer,  # ← 传递有效图层（可能已是继承来的）
         )
 
 
@@ -196,7 +181,9 @@ def _entity_segments(
     if entity_type in {"ARC", "CIRCLE"}:
         sagitta = _local_curve_tolerance(transform)
         return _tag_segments(
-            _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(sagitta)], False),
+            _segments_from_points(
+                [_apply_transform(_xy(point), transform) for point in entity.flattening(sagitta)], False
+            ),
             is_arc=True,
             source_type=entity_type,
         )
@@ -204,18 +191,27 @@ def _entity_segments(
     if entity_type == "ELLIPSE":
         distance = _local_curve_tolerance(transform)
         return _tag_segments(
-            _segments_from_points([_apply_transform(_xy(point), transform) for point in entity.flattening(distance)], False),
+            _segments_from_points(
+                [_apply_transform(_xy(point), transform) for point in entity.flattening(distance)], False
+            ),
             is_arc=True,
             source_type=entity_type,
         )
 
     if entity_type == "LWPOLYLINE":
-        points = [((float(x), float(y)), float(bulge)) for x, y, _start_width, _end_width, bulge in entity.get_points("xyseb")]
+        points = [
+            ((float(x), float(y)), float(bulge))
+            for x, y, _start_width, _end_width, bulge in entity.get_points("xyseb")
+        ]
         return _segments_from_bulged_points(points, bool(entity.closed), transform, source_type=entity_type)
 
     if entity_type == "POLYLINE":
-        points = [(_xy(vertex.dxf.location), float(vertex.dxf.get("bulge", 0.0))) for vertex in entity.vertices]
-        return _segments_from_bulged_points(points, bool(entity.is_closed), transform, source_type=entity_type)
+        points = [
+            (_xy(vertex.dxf.location), float(vertex.dxf.get("bulge", 0.0))) for vertex in entity.vertices
+        ]
+        return _segments_from_bulged_points(
+            points, bool(entity.is_closed), transform, source_type=entity_type
+        )
 
     return []
 
@@ -243,7 +239,9 @@ def _segments_from_bulged_points(
 
     for (start, bulge), (end, _next_bulge) in pairs:
         if abs(bulge) < 1e-12:
-            segments.append((_apply_transform(start, transform), _apply_transform(end, transform), False, source_type))
+            segments.append(
+                (_apply_transform(start, transform), _apply_transform(end, transform), False, source_type)
+            )
             continue
 
         arc_points = _bulge_arc_points(start, end, bulge, transform)

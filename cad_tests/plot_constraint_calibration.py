@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+from shapely.geometry import LineString, MultiLineString
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from axis_engine.cad_processor import CADLayoutProcessor
+from axis_engine.constraint_network_calibrator import (
+    ConstraintCalibrationOptions,
+    calibrate_orthogonal_segments,
+)
+from axis_engine.line_network_calibrator import NetworkSegment, SegmentType
+
+DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
+DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\constraint_calibrated_network.png"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="试验基于约束的正交线网校准算法，并绘制结果。")
+    parser.add_argument("--dxf", default=DEFAULT_DXF_PATH)
+    parser.add_argument("--opening-layer", action="append", dest="opening_layers", default=["WINDOW"])
+    parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument("--eps-axis", type=float, default=200.0)
+    parser.add_argument("--tau-join", type=float, default=120.0)
+    parser.add_argument("--tau-node", type=float, default=200.0)
+    parser.add_argument("--tau-span", type=float, default=300.0)
+    parser.add_argument("--tau-extend", type=float, default=200.0)
+    parser.add_argument("--show", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    processor = CADLayoutProcessor(args.dxf, opening_layers=args.opening_layers)
+    processor.build_geometry()
+    processor.extract_centerlines()
+    segments = collect_network_segments(processor)
+
+    options = ConstraintCalibrationOptions(
+        eps_axis=args.eps_axis,
+        tau_join=args.tau_join,
+        tau_node=args.tau_node,
+        tau_span=args.tau_span,
+        tau_extend=args.tau_extend,
+    )
+    result = calibrate_orthogonal_segments(segments, options)
+    print(f"输入语义线段: {len(segments)}")
+    print(f"接受连接约束: {len(result.accepted_candidates)}")
+    print(f"校准后线段: {len(result.adjusted_segments)}")
+    print(f"语义拓扑线段: {len(result.topology_segments)}")
+    print(f"拓扑子线段: {len(result.topology.geoms) if hasattr(result.topology, 'geoms') else 1}")
+
+    plot_result(segments, result.topology_segments, Path(args.output), show=args.show)
+    print(f"输出图片: {args.output}")
+
+
+def collect_network_segments(processor: CADLayoutProcessor) -> list[NetworkSegment]:
+    segments: list[NetworkSegment] = []
+    for line, thickness in processor.wall_centerlines:
+        segments.extend(
+            NetworkSegment(line, thickness, SegmentType.WALL, thickness >= 180.0)
+            for line in _straight_segments(line)
+        )
+    for line in processor.components.get("doors", MultiLineString()).geoms:
+        segments.extend(
+            NetworkSegment(item, 100.0, SegmentType.DOOR, False) for item in _straight_segments(line)
+        )
+    for line in processor.components.get("windows", MultiLineString()).geoms:
+        segments.extend(
+            NetworkSegment(item, 100.0, SegmentType.WINDOW, False) for item in _straight_segments(line)
+        )
+    for line in processor.components.get("balconies", MultiLineString()).geoms:
+        segments.extend(
+            NetworkSegment(item, 100.0, SegmentType.WINDOW, False) for item in _straight_segments(line)
+        )
+    return segments
+
+
+def plot_result(
+    raw_segments: list[NetworkSegment],
+    calibrated: list[NetworkSegment],
+    output_path: Path,
+    show: bool = False,
+):
+    fig, ax = plt.subplots(figsize=(18, 10))
+
+    for segment in raw_segments:
+        x, y = segment.geometry.xy
+        color = "#9aa0a6"
+        linewidth = 4
+        alpha = 0.35
+        if segment.seg_type == SegmentType.WALL:
+            color = "#b0b0b0"
+        elif segment.seg_type == SegmentType.DOOR:
+            color = "#7e57c2"
+        elif segment.seg_type == SegmentType.WINDOW:
+            color = "#26a69a"
+        ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, zorder=1)
+
+    for segment in calibrated:
+        line = segment.geometry
+        # if line.length < 200.0:
+        #     continue
+        x, y = line.xy
+        color = "#d32f2f"
+        linewidth = 1.6
+        if segment.seg_type == SegmentType.WALL:
+            color = "#d32f2f"
+            linewidth = 1.8
+        elif segment.seg_type == SegmentType.DOOR:
+            color = "#5e35b1"
+        elif segment.seg_type == SegmentType.WINDOW:
+            color = "#00897b"
+        ax.plot(x, y, color=color, linewidth=linewidth, zorder=5)
+
+    # plot end points, collect first
+    xs = []
+    ys = []
+    for segment in calibrated:
+        line = segment.geometry
+        x, y = line.xy
+        xs.extend([x[0], x[-1]])
+        ys.extend([y[0], y[-1]])
+    ax.scatter(xs, ys, color="#45d32f", s=5, zorder=10, label="calibrated endpoints")
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(True, linestyle="--", alpha=0.2)
+    ax.set_title("Constraint-Calibrated Orthogonal Network")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def _straight_segments(line: LineString):
+    coords = list(line.coords)
+    for start, end in zip(coords, coords[1:]):
+        segment = LineString([start, end])
+        if segment.length > 1.0:
+            yield segment
+
+
+def _iter_lines(geometry):
+    if isinstance(geometry, LineString):
+        return [geometry]
+    if isinstance(geometry, MultiLineString):
+        return list(geometry.geoms)
+    if hasattr(geometry, "geoms"):
+        return [line for geom in geometry.geoms for line in _iter_lines(geom)]
+    return []
+
+
+if __name__ == "__main__":
+    main()
