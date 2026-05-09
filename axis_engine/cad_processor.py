@@ -80,15 +80,38 @@ class CADLayoutProcessor:
 
     def build_geometry(self) -> LayoutArtifacts:
         doc = read_dxf(self.source_path)
+        self._initialize_components()
+        self._load_wall_geometry(doc)
+        self._extract_wall_axes()
+        self._build_wall_polygons()
+        self._load_openings(doc)
 
-        wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
-        self.wall_layers = wall_layers
+        return LayoutArtifacts(
+            wall_lines=self.wall_lines,
+            wall_centerlines=self.wall_centerlines,
+            wall_polygon=self.wall_polygon,
+            opening_lines=self.opening_lines,
+            opening_clusters=self.opening_clusters,
+            opening_embedments=self.opening_embedments,
+            components=self.components,
+        )
+
+    def _initialize_components(self):
+        self.components = {
+            "doors": MultiLineString(),
+            "windows": MultiLineString(),
+            "balconies": MultiLineString(),
+        }
+
+    def _load_wall_geometry(self, doc):
+        self.wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
         self.wall_lines = read_dxf_line_segments_from_layers(
             doc,
-            wall_layers,
+            self.wall_layers,
             visible_only=self.visible_only,
         )
 
+    def _extract_wall_axes(self):
         repair_options = {
             key: self.wall_axis_options[key]
             for key in ("axis_tolerance", "snap_tolerance")
@@ -100,54 +123,41 @@ class CADLayoutProcessor:
 
         thicknesses = self.wall_thicknesses or infer_wall_thicknesses(repaired_edges)
         self.wall_thicknesses = thicknesses
-
         self.wall_centerlines = extract_wall_axes_from_linework(
             self.wall_lines,
             thickness_candidates=thicknesses,
             **self.wall_axis_options,
         )
+
+    def _build_wall_polygons(self):
         self.wall_polygon = build_wall_polygon_from_raw_lines(
             self.wall_lines,
-            wall_thicknesses=thicknesses,
+            wall_thicknesses=self.wall_thicknesses,
         )
 
-        self.components = {
-            "doors": MultiLineString(),
-            "windows": MultiLineString(),
-            "balconies": MultiLineString(),
-        }
-
-        if self.opening_layers:
-            opening_segments = read_dxf_segments_from_layers(
-                doc,
-                self.opening_layers,
-                visible_only=self.visible_only,
-            )
-            self.opening_lines = [segment.line for segment in opening_segments]
-            self.opening_clusters = cluster_opening_segments(
-                opening_segments,
-                **self.opening_cluster_options,
-            )
-            self.opening_embedments = infer_opening_embedments(
-                self.wall_centerlines,
-                self.opening_clusters,
-                **self.embedment_options,
-            )
-            self._load_opening_embedments_as_components()
-        else:
+    def _load_openings(self, doc):
+        if not self.opening_layers:
             self.opening_lines = []
             self.opening_clusters = []
             self.opening_embedments = []
+            return
 
-        return LayoutArtifacts(
-            wall_lines=self.wall_lines,
-            wall_centerlines=self.wall_centerlines,
-            wall_polygon=self.wall_polygon,
-            opening_lines=self.opening_lines,
-            opening_clusters=self.opening_clusters,
-            opening_embedments=self.opening_embedments,
-            components=self.components,
+        opening_segments = read_dxf_segments_from_layers(
+            doc,
+            self.opening_layers,
+            visible_only=self.visible_only,
         )
+        self.opening_lines = [segment.line for segment in opening_segments]
+        self.opening_clusters = cluster_opening_segments(
+            opening_segments,
+            **self.opening_cluster_options,
+        )
+        self.opening_embedments = infer_opening_embedments(
+            self.wall_centerlines,
+            self.opening_clusters,
+            **self.embedment_options,
+        )
+        self._load_opening_embedments_as_components()
 
     def extract_centerlines(self) -> list[tuple[LineString, float]]:
         if not self.wall_centerlines:
