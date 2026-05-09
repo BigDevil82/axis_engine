@@ -77,6 +77,7 @@ class CADLayoutProcessor:
         self.unified_network = MultiLineString()
         self.rooms: list[Polygon] = []
         self.room_groups: list[list[Polygon]] = []
+        self._geometry_built = False
 
     def build_geometry(self) -> LayoutArtifacts:
         doc = read_dxf(self.source_path)
@@ -85,6 +86,7 @@ class CADLayoutProcessor:
         self._extract_wall_axes()
         self._build_wall_polygons()
         self._load_openings(doc)
+        self._geometry_built = True
 
         return LayoutArtifacts(
             wall_lines=self.wall_lines,
@@ -110,6 +112,8 @@ class CADLayoutProcessor:
             self.wall_layers,
             visible_only=self.visible_only,
         )
+        if not self.wall_lines:
+            raise RuntimeError("No wall line segments were loaded from DXF wall layers.")
 
     def _extract_wall_axes(self):
         repair_options = {
@@ -128,6 +132,8 @@ class CADLayoutProcessor:
             thickness_candidates=thicknesses,
             **self.wall_axis_options,
         )
+        if not self.wall_centerlines:
+            raise RuntimeError("Wall axis extraction produced no centerlines.")
 
     def _build_wall_polygons(self):
         self.wall_polygon = build_wall_polygon_from_raw_lines(
@@ -160,11 +166,13 @@ class CADLayoutProcessor:
         self._load_opening_embedments_as_components()
 
     def extract_centerlines(self) -> list[tuple[LineString, float]]:
-        if not self.wall_centerlines:
-            raise RuntimeError("No wall centerlines found. Run build_geometry() first.")
+        if not self._geometry_built:
+            raise RuntimeError("Geometry is not built. Run build_geometry() first.")
         return self.wall_centerlines
 
     def collect_network_segments(self) -> list[NetworkSegment]:
+        if not self._geometry_built:
+            raise RuntimeError("Geometry is not built. Run build_geometry() first.")
         segments: list[NetworkSegment] = []
         for line, thickness in self.wall_centerlines:
             segments.extend(
@@ -192,9 +200,13 @@ class CADLayoutProcessor:
                 NetworkSegment(segment, 100.0, SegmentType.WINDOW, False)
                 for segment in iter_straight_segments(line)
             )
+        if not segments:
+            raise RuntimeError("No semantic network segments available for calibration.")
         return segments
 
     def generate_rooms(self) -> list[Polygon]:
+        if not self._geometry_built:
+            raise RuntimeError("Geometry is not built. Run build_geometry() first.")
         self.all_segments = self.collect_network_segments()
         calibrator = LineNetworkCalibrator(structural_thickness_threshold=300.0)
         self.unified_network = calibrator.calibrate(self.all_segments)
@@ -208,6 +220,8 @@ class CADLayoutProcessor:
             valid_rooms.extend(sub_rects)
             self.room_groups.append(sub_rects)
         self.rooms = valid_rooms
+        if not self.rooms:
+            raise RuntimeError("Room generation produced no valid rooms.")
         return self.rooms
 
     def _load_opening_embedments_as_components(self):

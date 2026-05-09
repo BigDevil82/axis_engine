@@ -11,6 +11,8 @@
 2. `collect_network_segments()`：将墙/门/窗语义线统一为校准输入。
 3. `generate_rooms()`：线网校准后 polygonize + 矩形分解，得到房间结果。
 
+> 调用顺序要求：必须先执行 `build_geometry()`，再调用后续步骤。若墙线/轴线/房间为空，处理器会抛出明确异常而不是静默继续。
+
 ## 最小验证脚本（cad_tests）
 
 - `plot_wall_axes_from_dxf.py`：墙轴线提取验证。
