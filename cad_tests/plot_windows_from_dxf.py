@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import matplotlib.patches as patches
-import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -15,6 +14,7 @@ from axis_engine.cad_processor import CADLayoutProcessor
 from axis_engine.opening_clustering import cluster_bounds
 from axis_engine.opening_embedment import unmatched_opening_indices
 from axis_engine.geometry_utils import iter_lines
+from cad_tests.plot_common import create_axes, save_and_maybe_show
 
 DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\opening_embedments.png"
@@ -52,7 +52,7 @@ def main():
 
 
 def plot_result(wall_axes, opening_clusters, opening_embedments, output_path: Path, show: bool = False):
-    fig, ax = plt.subplots(figsize=(14, 10))
+    fig, ax = create_axes((14, 10))
 
     for line, _thickness in wall_axes:
         x, y = line.xy
@@ -86,16 +86,10 @@ def plot_result(wall_axes, opening_clusters, opening_embedments, output_path: Pa
             ax.plot(x, y, color=color, linewidth=2.2, zorder=8, label=label)
             label = None
 
-    ax.set_aspect("equal", adjustable="box")
     ax.set_title("Opening Clusters And Embedments")
-    ax.grid(True, linestyle="--", alpha=0.2)
     if seen_labels:
         ax.legend(loc="upper right")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=220, bbox_inches="tight")
-    if show:
-        plt.show()
-    plt.close(fig)
+    save_and_maybe_show(fig, output_path, show=show)
 
 
 if __name__ == "__main__":

@@ -5,13 +5,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from axis_engine.cad_processor import CADLayoutProcessor
+from cad_tests.plot_common import create_axes, save_and_maybe_show
 
 DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\wall_axes_linework.png"
@@ -48,7 +47,7 @@ def main():
 
 
 def plot_result(wall_lines, axes, output_path: Path, show: bool = False):
-    fig, ax = plt.subplots(figsize=(16, 10))
+    fig, ax = create_axes((16, 10))
     for line in wall_lines:
         x, y = line.xy
         ax.plot(x, y, color="#9aa0a6", linewidth=0.5, alpha=1, zorder=3)
@@ -66,16 +65,10 @@ def plot_result(wall_lines, axes, output_path: Path, show: bool = False):
         )
         axis_label_added = True
 
-    ax.set_aspect("equal", adjustable="box")
     ax.set_title("Wall Axis Extraction (DXF)")
-    ax.grid(True, linestyle="--", alpha=0.2)
     if axis_label_added:
         ax.legend(loc="upper right")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=220, bbox_inches="tight")
-    if show:
-        plt.show()
-    plt.close(fig)
+    save_and_maybe_show(fig, output_path, show=show)
 
 
 if __name__ == "__main__":

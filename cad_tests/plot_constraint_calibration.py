@@ -4,8 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -16,6 +14,7 @@ from axis_engine.constraint_network_calibrator import (
     calibrate_orthogonal_segments,
 )
 from axis_engine.line_network_calibrator import NetworkSegment, SegmentType
+from cad_tests.plot_common import create_axes, save_and_maybe_show
 
 DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\constraint_calibrated_network.png"
@@ -65,7 +64,7 @@ def plot_result(
     output_path: Path,
     show: bool = False,
 ):
-    fig, ax = plt.subplots(figsize=(18, 10))
+    fig, ax = create_axes((18, 10))
 
     for segment in raw_segments:
         x, y = segment.geometry.xy
@@ -106,14 +105,8 @@ def plot_result(
         ys.extend([y[0], y[-1]])
     ax.scatter(xs, ys, color="#45d32f", s=5, zorder=10, label="calibrated endpoints")
 
-    ax.set_aspect("equal", adjustable="box")
-    ax.grid(True, linestyle="--", alpha=0.2)
     ax.set_title("Constraint-Calibrated Orthogonal Network")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=220, bbox_inches="tight")
-    if show:
-        plt.show()
-    plt.close(fig)
+    save_and_maybe_show(fig, output_path, show=show)
 
 if __name__ == "__main__":
     main()
