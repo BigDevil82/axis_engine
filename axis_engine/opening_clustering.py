@@ -8,7 +8,7 @@ from typing import Sequence
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
-from cad_tests.dxf_utils import DxfLineSegment
+from axis_engine.dxf_utils import DxfLineSegment
 
 
 @dataclass(frozen=True)

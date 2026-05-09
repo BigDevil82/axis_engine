@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import ezdxf
@@ -77,7 +77,6 @@ def read_dxf_segments_from_layers(
     segments: list[DxfLineSegment] = []
 
     def collect(entity, transform: Transform2D, effective_layer: str):
-        # 用有效图层判断（已处理 0 图层继承）
         if effective_layer not in layer_set:
             return
         if getattr(entity.dxf, "invisible", 0):
@@ -108,17 +107,13 @@ def _iter_entity_and_nested_virtuals(
     in_block: bool = False,
     transform: Transform2D = IDENTITY_TRANSFORM,
     visited_blocks: frozenset[str] = frozenset(),
-    parent_layer: str | None = None,  # ← 新增：上级 INSERT 的图层
+    parent_layer: str | None = None,
 ):
     selected_layers = selected_layers or set()
 
     if visible_only and not _is_entity_visible(entity, doc, in_block):
         return
 
-    # 计算有效图层：
-    #   - 图元本身不在 0 图层 → 用自身图层
-    #   - 图元在 0 图层且有父级 INSERT → 继承父级图层
-    #   - 图元在 0 图层且无父级（顶层） → 保留 "0"（不会命中业务图层，自然过滤）
     own_layer = entity.dxf.layer
     effective_layer = parent_layer if (own_layer == "0" and parent_layer is not None) else own_layer
 
@@ -137,16 +132,13 @@ def _iter_entity_and_nested_virtuals(
     except Exception:
         return
 
-    # 匿名块（尺寸、填充等）跳过
     if block_name.startswith("*"):
         return
 
     next_transform = _compose_transform(transform, _insert_transform(entity))
     next_visited = visited_blocks | {block_name}
 
-    # 将本 INSERT 的有效图层作为子图元的 parent_layer 传递下去
     for virtual_entity in block:
-        # 跳过属性定义模板和序列结束标记
         if virtual_entity.dxftype() in ("ATTDEF", "SEQEND"):
             continue
         yield from _iter_entity_and_nested_virtuals(
@@ -158,7 +150,7 @@ def _iter_entity_and_nested_virtuals(
             in_block=True,
             transform=next_transform,
             visited_blocks=next_visited,
-            parent_layer=effective_layer,  # ← 传递有效图层（可能已是继承来的）
+            parent_layer=effective_layer,
         )
 
 
@@ -209,9 +201,7 @@ def _entity_segments(
         points = [
             (_xy(vertex.dxf.location), float(vertex.dxf.get("bulge", 0.0))) for vertex in entity.vertices
         ]
-        return _segments_from_bulged_points(
-            points, bool(entity.is_closed), transform, source_type=entity_type
-        )
+        return _segments_from_bulged_points(points, bool(entity.is_closed), transform, source_type=entity_type)
 
     return []
 
@@ -351,3 +341,4 @@ def _is_entity_visible(entity, doc, in_block: bool) -> bool:
 
     layer = doc.layers.get(layer_name)
     return not layer.is_off() and not layer.is_frozen()
+

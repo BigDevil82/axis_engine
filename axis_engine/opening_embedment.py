@@ -151,7 +151,7 @@ def _coerce_opening_cluster(opening_group: OpeningCluster | Sequence[LineString]
     if isinstance(opening_group, OpeningCluster):
         return opening_group
 
-    from cad_tests.dxf_utils import DxfLineSegment
+    from axis_engine.dxf_utils import DxfLineSegment
 
     return OpeningCluster(
         tuple(DxfLineSegment(line=line, source_type="UNKNOWN", is_arc=False) for line in opening_group)

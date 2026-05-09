@@ -8,6 +8,12 @@ from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.ops import polygonize
 
 from axis_engine.geometry_utils import iter_lines, iter_straight_segments
+from axis_engine.dxf_utils import (
+    pick_dxf_wall_layers,
+    read_dxf,
+    read_dxf_line_segments_from_layers,
+    read_dxf_segments_from_layers,
+)
 from axis_engine.linework_axis_extractor import (
     extract_wall_axes_from_linework,
     infer_wall_thicknesses,
@@ -21,13 +27,6 @@ from axis_engine.opening_embedment import (
     infer_opening_embedments,
 )
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
-from cad_tests.dxf_utils import (
-    pick_dxf_wall_layers,
-    read_dxf,
-    read_dxf_line_segments_from_layers,
-    read_dxf_segments_from_layers,
-)
-
 from .line_network_calibrator import LineNetworkCalibrator, NetworkSegment, SegmentType
 from .rect_decomposer import RectangularDecomposer
 
