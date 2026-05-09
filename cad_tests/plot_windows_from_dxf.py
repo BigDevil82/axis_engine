@@ -14,9 +14,9 @@ from axis_engine.cad_processor import CADLayoutProcessor
 from axis_engine.opening_clustering import cluster_bounds
 from axis_engine.opening_embedment import unmatched_opening_indices
 from axis_engine.geometry_utils import iter_lines
+from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
 from cad_tests.plot_common import create_axes, save_and_maybe_show
 
-DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\opening_embedments.png"
 
 
@@ -31,7 +31,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    processor = CADLayoutProcessor(args.dxf, opening_layers=args.opening_layers)
+    dxf_path = ensure_dxf_exists(args.dxf)
+    processor = CADLayoutProcessor(dxf_path, opening_layers=args.opening_layers)
     artifacts = processor.build_geometry()
     unmatched = unmatched_opening_indices(len(artifacts.opening_clusters), artifacts.opening_embedments)
 

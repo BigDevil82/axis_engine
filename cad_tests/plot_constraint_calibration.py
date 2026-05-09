@@ -14,9 +14,9 @@ from axis_engine.constraint_network_calibrator import (
     calibrate_orthogonal_segments,
 )
 from axis_engine.line_network_calibrator import NetworkSegment, SegmentType
+from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
 from cad_tests.plot_common import create_axes, save_and_maybe_show
 
-DEFAULT_DXF_PATH = r"E:\Common\Desktop\test\ai-structures\case3\test.dxf"
 DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\constraint_calibrated_network.png"
 
 
@@ -36,7 +36,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    processor = CADLayoutProcessor(args.dxf, opening_layers=args.opening_layers)
+    dxf_path = ensure_dxf_exists(args.dxf)
+    processor = CADLayoutProcessor(dxf_path, opening_layers=args.opening_layers)
     processor.build_geometry()
     segments = processor.collect_network_segments()
 
