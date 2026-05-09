@@ -14,10 +14,14 @@ from axis_engine.constraint_network_calibrator import (
     calibrate_orthogonal_segments,
 )
 from axis_engine.line_network_calibrator import NetworkSegment, SegmentType
-from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
+from cad_tests.cli_common import (
+    DEFAULT_CALIBRATION_OUTPUT_PATH,
+    DEFAULT_DXF_PATH,
+    ensure_dxf_exists,
+)
 from cad_tests.plot_common import create_axes, save_and_maybe_show
 
-DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\constraint_calibrated_network.png"
+DEFAULT_OUTPUT_PATH = DEFAULT_CALIBRATION_OUTPUT_PATH
 
 
 def parse_args():

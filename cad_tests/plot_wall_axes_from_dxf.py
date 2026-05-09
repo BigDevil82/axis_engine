@@ -10,10 +10,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from axis_engine.cad_processor import CADLayoutProcessor
-from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
+from cad_tests.cli_common import (
+    DEFAULT_DXF_PATH,
+    DEFAULT_WALL_AXES_OUTPUT_PATH,
+    ensure_dxf_exists,
+)
 from cad_tests.plot_common import create_axes, save_and_maybe_show
 
-DEFAULT_OUTPUT_PATH = r"E:\Common\Desktop\test\ai-structures\case3\wall_axes_linework.png"
+DEFAULT_OUTPUT_PATH = DEFAULT_WALL_AXES_OUTPUT_PATH
 
 
 def parse_args():
