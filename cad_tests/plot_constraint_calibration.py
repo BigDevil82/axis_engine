@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from shapely.geometry import LineString, MultiLineString
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -40,8 +39,7 @@ def main():
     args = parse_args()
     processor = CADLayoutProcessor(args.dxf, opening_layers=args.opening_layers)
     processor.build_geometry()
-    processor.extract_centerlines()
-    segments = collect_network_segments(processor)
+    segments = processor.collect_network_segments()
 
     options = ConstraintCalibrationOptions(
         eps_axis=args.eps_axis,
@@ -59,28 +57,6 @@ def main():
 
     plot_result(segments, result.topology_segments, Path(args.output), show=args.show)
     print(f"输出图片: {args.output}")
-
-
-def collect_network_segments(processor: CADLayoutProcessor) -> list[NetworkSegment]:
-    segments: list[NetworkSegment] = []
-    for line, thickness in processor.wall_centerlines:
-        segments.extend(
-            NetworkSegment(line, thickness, SegmentType.WALL, thickness >= 180.0)
-            for line in _straight_segments(line)
-        )
-    for line in processor.components.get("doors", MultiLineString()).geoms:
-        segments.extend(
-            NetworkSegment(item, 100.0, SegmentType.DOOR, False) for item in _straight_segments(line)
-        )
-    for line in processor.components.get("windows", MultiLineString()).geoms:
-        segments.extend(
-            NetworkSegment(item, 100.0, SegmentType.WINDOW, False) for item in _straight_segments(line)
-        )
-    for line in processor.components.get("balconies", MultiLineString()).geoms:
-        segments.extend(
-            NetworkSegment(item, 100.0, SegmentType.WINDOW, False) for item in _straight_segments(line)
-        )
-    return segments
 
 
 def plot_result(
@@ -138,25 +114,6 @@ def plot_result(
     if show:
         plt.show()
     plt.close(fig)
-
-
-def _straight_segments(line: LineString):
-    coords = list(line.coords)
-    for start, end in zip(coords, coords[1:]):
-        segment = LineString([start, end])
-        if segment.length > 1.0:
-            yield segment
-
-
-def _iter_lines(geometry):
-    if isinstance(geometry, LineString):
-        return [geometry]
-    if isinstance(geometry, MultiLineString):
-        return list(geometry.geoms)
-    if hasattr(geometry, "geoms"):
-        return [line for geom in geometry.geoms for line in _iter_lines(geom)]
-    return []
-
 
 if __name__ == "__main__":
     main()
