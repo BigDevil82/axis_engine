@@ -91,6 +91,22 @@ def pick_dxf_wall_layers(doc, explicit_layers: Sequence[str] | None = None) -> l
     return candidates
 
 
+def pick_dxf_axis_layers(doc, explicit_layers: Sequence[str] | None = None) -> list[str]:
+    if explicit_layers:
+        return list(explicit_layers)
+
+    names = list_dxf_layer_names(doc)
+    if "AXIS_WALL" in names:
+        return ["AXIS_WALL"]
+
+    candidates = []
+    for name in names:
+        lower_name = name.lower()
+        if "轴" in name or "axis" in lower_name:
+            candidates.append(name)
+    return candidates
+
+
 def read_dxf_geometries_from_layers(
     doc,
     layer_names: Iterable[str],

@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--dxf", default=DEFAULT_DXF_PATH)
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
+    parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers")
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
@@ -36,10 +37,12 @@ def main():
     processor = CADLayoutProcessor(
         dxf_path,
         wall_layers=args.wall_layers,
+        axis_layers=args.axis_layers,
         opening_layers=args.opening_layers,
     )
     artifacts = processor.build_geometry()
     thickness_counts = Counter(thickness for _line, thickness in artifacts.wall_axes)
+    print(f"参考轴线图元: {len(artifacts.axis_geometries)}")
     print(f"墙体原始图元: {len(artifacts.wall_geometries)}")
     print(f"墙体线性工作视图: {len(artifacts.wall_linework)}")
     print(f"提取墙轴线: {len(artifacts.wall_axes)}")

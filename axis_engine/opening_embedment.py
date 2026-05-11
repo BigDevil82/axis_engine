@@ -169,6 +169,7 @@ def snap_embed_line_to_wall_endpoints(
     endpoint_index: WallAxisEndpointIndex,
     snap_tolerance: float = 400.0,
 ) -> LineString:
+    return line
     coords = list(line.coords)
     if len(coords) < 2:
         return line

@@ -9,6 +9,7 @@ from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from axis_engine.dxf_utils import (
     DxfGeometry,
     geometries_to_linework,
+    pick_dxf_axis_layers,
     pick_dxf_wall_layers,
     read_dxf,
     read_dxf_geometries_from_layers,
@@ -29,10 +30,13 @@ from axis_engine.opening_embedment import (
 )
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 from axis_engine.room_generation import generate_rooms_from_segments
+from axis_engine.skeleton_topology_calibrator import calibrate_skeleton_topology
 
 
 @dataclass(frozen=True)
 class LayoutArtifacts:
+    axis_geometries: list[DxfGeometry]
+    axis_linework: list[LineString]
     wall_geometries: list[DxfGeometry]
     wall_linework: list[LineString]
     wall_axes: list[tuple[LineString, float]]
@@ -54,25 +58,34 @@ class CADLayoutProcessor:
         self,
         source_path: str | Path,
         wall_layers: Sequence[str] | None = None,
+        axis_layers: Sequence[str] | None = None,
         opening_layers: Sequence[str] | None = None,
         wall_thicknesses: Sequence[float] | None = None,
         visible_only: bool = False,
         wall_axis_options: dict | None = None,
         opening_cluster_options: dict | None = None,
         embedment_options: dict | None = None,
+        topology_calibration_options: dict | None = None,
+        reference_axis_snap_tolerance: float = 100.0,
     ):
         self.source_path = Path(source_path)
         if self.source_path.suffix.lower() != ".dxf":
             raise ValueError("CADLayoutProcessor only supports DXF input.")
 
         self.wall_layers = list(set(wall_layers)) if wall_layers else None
+        self.axis_layers = list(set(axis_layers)) if axis_layers else None
         self.opening_layers = list(set(opening_layers or ["WINDOW"]))
         self.wall_thicknesses = list(wall_thicknesses) if wall_thicknesses else None
         self.visible_only = visible_only
         self.wall_axis_options = dict(wall_axis_options or {})
         self.opening_cluster_options = dict(opening_cluster_options or {})
         self.embedment_options = dict(embedment_options or {})
+        self.topology_calibration_options = dict(topology_calibration_options or {})
+        self.reference_axis_snap_tolerance = float(reference_axis_snap_tolerance)
 
+        self.axis_geometries: list[DxfGeometry] = []
+        self.axis_linework: list[LineString] = []
+        self.reference_axes = ReferenceAxisGrid()
         self.wall_geometries: list[DxfGeometry] = []
         self.wall_linework: list[LineString] = []
         self.wall_axes: list[tuple[LineString, float]] = []
@@ -90,13 +103,19 @@ class CADLayoutProcessor:
     def build_geometry(self) -> LayoutArtifacts:
         doc = read_dxf(self.source_path)
         self.components = _empty_components()
+        self._load_reference_axes(doc)
         self._load_wall_geometries(doc)
         self._extract_wall_axes()
+        self._align_wall_axes_to_reference_axes()
         self._build_wall_polygon()
         self._load_openings(doc)
+        self._align_openings_to_reference_axes()
+        self._calibrate_skeleton_topology()
         self._geometry_built = True
 
         return LayoutArtifacts(
+            axis_geometries=self.axis_geometries,
+            axis_linework=self.axis_linework,
             wall_geometries=self.wall_geometries,
             wall_linework=self.wall_linework,
             wall_axes=self.wall_axes,
@@ -151,6 +170,20 @@ class CADLayoutProcessor:
             raise RuntimeError("Room generation produced no valid rooms.")
         return self.rooms
 
+    def _load_reference_axes(self, doc):
+        self.axis_layers = pick_dxf_axis_layers(doc, self.axis_layers)
+        if not self.axis_layers:
+            self.reference_axes = ReferenceAxisGrid()
+            return
+
+        self.axis_geometries = read_dxf_geometries_from_layers(
+            doc,
+            self.axis_layers,
+            visible_only=self.visible_only,
+        )
+        self.axis_linework = geometries_to_linework(self.axis_geometries)
+        self.reference_axes = ReferenceAxisGrid.from_lines(self.axis_linework)
+
     def _load_wall_geometries(self, doc):
         self.wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
         self.wall_geometries = read_dxf_geometries_from_layers(
@@ -182,6 +215,17 @@ class CADLayoutProcessor:
         if not self.wall_axes:
             raise RuntimeError("Wall axis extraction produced no centerlines.")
 
+    def _align_wall_axes_to_reference_axes(self):
+        if self.reference_axes.is_empty:
+            return
+        aligned_axes: list[tuple[LineString, float]] = []
+        for line, thickness in self.wall_axes:
+            for segment in iter_straight_segments(line):
+                aligned = self.reference_axes.align_line(segment, self.reference_axis_snap_tolerance)
+                if aligned.length > 0:
+                    aligned_axes.append((aligned, thickness))
+        self.wall_axes = aligned_axes
+
     def _build_wall_polygon(self):
         self.wall_polygon = build_wall_polygon_from_raw_lines(
             self.wall_linework,
@@ -208,9 +252,120 @@ class CADLayoutProcessor:
         )
         self.components = _components_from_embedments(self.opening_embedments)
 
+    def _align_openings_to_reference_axes(self):
+        if self.reference_axes.is_empty or not self.opening_embedments:
+            return
+
+        self.opening_embedments = [
+            OpeningEmbedment(
+                opening_type=embedment.opening_type,
+                embed_line=self.reference_axes.align_line(
+                    embedment.embed_line,
+                    self.reference_axis_snap_tolerance,
+                ),
+                cluster_index=embedment.cluster_index,
+                confidence=embedment.confidence,
+                reason=f"{embedment.reason}|axis_aligned",
+            )
+            for embedment in self.opening_embedments
+        ]
+        self.components = _components_from_embedments(self.opening_embedments)
+
+    def _calibrate_skeleton_topology(self):
+        if not self.wall_axes and not self.opening_embedments:
+            return
+
+        result = calibrate_skeleton_topology(
+            self.wall_axes,
+            self.opening_embedments,
+            **self.topology_calibration_options,
+        )
+        self.wall_axes = result.wall_axes
+        self.opening_embedments = result.opening_embedments
+        self.components = _components_from_embedments(self.opening_embedments)
+
     def _require_geometry(self):
         if not self._geometry_built:
             raise RuntimeError("Geometry is not built. Run build_geometry() first.")
+
+
+class ReferenceAxisGrid:
+    def __init__(self, x_axes: Sequence[float] = (), y_axes: Sequence[float] = ()):
+        self.x_axes = sorted(float(value) for value in x_axes)
+        self.y_axes = sorted(float(value) for value in y_axes)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.x_axes and not self.y_axes
+
+    @classmethod
+    def from_lines(cls, lines: Sequence[LineString], axis_tolerance: float = 8.0) -> ReferenceAxisGrid:
+        x_axes: list[float] = []
+        y_axes: list[float] = []
+        for line in lines:
+            coords = list(line.coords)
+            if len(coords) < 2:
+                continue
+            start = coords[0]
+            end = coords[-1]
+            dx = abs(end[0] - start[0])
+            dy = abs(end[1] - start[1])
+            if dx <= axis_tolerance and dy > axis_tolerance:
+                x_axes.append((start[0] + end[0]) / 2.0)
+            elif dy <= axis_tolerance and dx > axis_tolerance:
+                y_axes.append((start[1] + end[1]) / 2.0)
+
+        return cls(_dedupe_sorted_values(x_axes), _dedupe_sorted_values(y_axes))
+
+    def align_line(self, line: LineString, snap_tolerance: float) -> LineString:
+        coords = list(line.coords)
+        if len(coords) < 2:
+            return line
+
+        start = coords[0]
+        end = coords[-1]
+        dx = abs(end[0] - start[0])
+        dy = abs(end[1] - start[1])
+        if dx >= dy:
+            y = self._nearest_within((start[1] + end[1]) / 2.0, self.y_axes, snap_tolerance)
+            if y is None:
+                y = (start[1] + end[1]) / 2.0
+            x1 = start[0]
+            x2 = end[0]
+            return LineString([(x1, y), (x2, y)])
+
+        x = self._nearest_within((start[0] + end[0]) / 2.0, self.x_axes, snap_tolerance)
+        if x is None:
+            x = (start[0] + end[0]) / 2.0
+        y1 = start[1]
+        y2 = end[1]
+        return LineString([(x, y1), (x, y2)])
+
+    def _nearest_within(
+        self,
+        value: float,
+        candidates: Sequence[float],
+        snap_tolerance: float,
+    ) -> float | None:
+        if not candidates:
+            return None
+        nearest = min(candidates, key=lambda candidate: abs(candidate - value))
+        if abs(nearest - value) > snap_tolerance:
+            return None
+        return nearest
+
+
+def _dedupe_sorted_values(values: Sequence[float], tolerance: float = 5.0) -> list[float]:
+    if not values:
+        return []
+
+    groups: list[list[float]] = []
+    for value in sorted(values):
+        if not groups or abs(value - groups[-1][-1]) > tolerance:
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    return [sum(group) / len(group) for group in groups]
 
 
 def _components_from_embedments(embedments: Sequence[OpeningEmbedment]) -> dict[str, MultiLineString]:

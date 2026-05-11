@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 
 import matplotlib.patches as patches
+from shapely.geometry import MultiLineString
+from shapely.ops import linemerge, unary_union
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -29,6 +31,7 @@ def parse_args():
     parser.add_argument("--dxf", default=DEFAULT_DXF_PATH)
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
+    parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers", default=["WINDOW"])
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
@@ -37,17 +40,24 @@ def parse_args():
 def main():
     args = parse_args()
     dxf_path = ensure_dxf_exists(args.dxf)
-    processor = CADLayoutProcessor(dxf_path, wall_layers=args.wall_layers, opening_layers=args.opening_layers)
+    processor = CADLayoutProcessor(
+        dxf_path,
+        wall_layers=args.wall_layers,
+        axis_layers=args.axis_layers,
+        opening_layers=args.opening_layers,
+    )
     artifacts = processor.build_geometry()
     unmatched = unmatched_opening_indices(len(artifacts.opening_clusters), artifacts.opening_embedments)
 
     print(f"门窗图层: {', '.join(args.opening_layers)}")
+    print(f"参考轴线图元: {len(artifacts.axis_geometries)}")
     print(f"门窗原始图元: {len(artifacts.opening_geometries)}")
     print(f"门窗聚类组: {len(artifacts.opening_clusters)}")
     print(f"门窗嵌入线: {len(artifacts.opening_embedments)}")
     print(f"未匹配门窗: {len(unmatched)}")
 
     plot_result(
+        artifacts.axis_linework,
         artifacts.wall_axes,
         artifacts.opening_geometries,
         artifacts.opening_clusters,
@@ -59,6 +69,7 @@ def main():
 
 
 def plot_result(
+    axis_linework,
     wall_axes,
     opening_geometries,
     opening_clusters,
@@ -67,6 +78,28 @@ def plot_result(
     show: bool = False,
 ):
     fig, ax = create_axes((14, 10))
+
+    buffered_network = build_buffered_network(wall_axes, opening_embedments)
+    if not buffered_network.is_empty:
+        geoms = list(buffered_network.geoms) if hasattr(buffered_network, "geoms") else [buffered_network]
+        for polygon in geoms:
+            x, y = polygon.exterior.xy
+            ax.fill(x, y, color="gray", alpha=0.45, linewidth=0, zorder=-2, label=None)
+
+    axis_label_added = False
+    for line in axis_linework:
+        x, y = line.xy
+        ax.plot(
+            x,
+            y,
+            color="#1565c0",
+            linewidth=0.8,
+            alpha=0.75,
+            linestyle="--",
+            zorder=0,
+            label="reference axis" if not axis_label_added else None,
+        )
+        axis_label_added = True
 
     for line, _thickness in wall_axes:
         x, y = line.xy
@@ -128,9 +161,21 @@ def plot_result(
             label = None
 
     ax.set_title("Opening Clusters And Embedments")
-    if seen_labels or raw_labels:
+    if seen_labels or raw_labels or axis_label_added:
         ax.legend(loc="upper right")
     save_and_maybe_show(fig, output_path, show=show)
+
+
+def build_buffered_network(wall_axes, opening_embedments, buffer_distance: float = 100.0):
+    lines = [line for line, _thickness in wall_axes if line.length > 0]
+    for embedment in opening_embedments:
+        lines.extend(line for line in iter_lines(embedment.embed_line) if line.length > 0)
+
+    if not lines:
+        return MultiLineString().buffer(0)
+
+    network = linemerge(unary_union(lines))
+    return network.buffer(buffer_distance, cap_style=2, join_style=2)
 
 
 if __name__ == "__main__":
