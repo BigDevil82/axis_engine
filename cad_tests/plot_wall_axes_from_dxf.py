@@ -39,21 +39,22 @@ def main():
         opening_layers=args.opening_layers,
     )
     artifacts = processor.build_geometry()
-    thickness_counts = Counter(thickness for _line, thickness in artifacts.wall_centerlines)
-    print(f"墙体原始线段: {len(artifacts.wall_lines)}")
-    print(f"提取墙轴线: {len(artifacts.wall_centerlines)}")
+    thickness_counts = Counter(thickness for _line, thickness in artifacts.wall_axes)
+    print(f"墙体原始图元: {len(artifacts.wall_geometries)}")
+    print(f"墙体线性工作视图: {len(artifacts.wall_linework)}")
+    print(f"提取墙轴线: {len(artifacts.wall_axes)}")
     if thickness_counts:
         summary = ", ".join(f"{thick:g}: {count}" for thick, count in sorted(thickness_counts.items()))
         print(f"轴线墙厚分布: {summary}")
     print(f"门窗组: {len(artifacts.opening_clusters)}")
     print(f"门窗嵌入线: {len(artifacts.opening_embedments)}")
-    plot_result(artifacts.wall_lines, artifacts.wall_centerlines, Path(args.output), show=args.show)
+    plot_result(artifacts.wall_linework, artifacts.wall_axes, Path(args.output), show=args.show)
     print(f"输出图片: {args.output}")
 
 
-def plot_result(wall_lines, axes, output_path: Path, show: bool = False):
+def plot_result(wall_linework, axes, output_path: Path, show: bool = False):
     fig, ax = create_axes((16, 10))
-    for line in wall_lines:
+    for line in wall_linework:
         x, y = line.xy
         ax.plot(x, y, color="#9aa0a6", linewidth=0.5, alpha=1, zorder=3)
 

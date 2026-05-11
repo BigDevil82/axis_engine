@@ -8,40 +8,40 @@ from typing import Sequence
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
-from axis_engine.dxf_utils import DxfLineSegment
+from axis_engine.dxf_utils import DxfGeometry
 
 
 @dataclass(frozen=True)
 class OpeningCluster:
-    segments: tuple[DxfLineSegment, ...]
+    geometries: tuple[DxfGeometry, ...]
 
     @property
     def lines(self) -> list[LineString]:
-        return [segment.line for segment in self.segments]
+        return [geometry.representative_line() for geometry in self.geometries]
+
+    @property
+    def arcs(self) -> list[DxfGeometry]:
+        return [geometry for geometry in self.geometries if geometry.geom_type == "ARC"]
 
     @property
     def has_arc(self) -> bool:
-        return any(segment.is_arc for segment in self.segments)
-
-    @property
-    def arc_lines(self) -> list[LineString]:
-        return [segment.line for segment in self.segments if segment.is_arc]
+        return bool(self.arcs)
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
         return cluster_bounds(self.lines)
 
 
-def cluster_opening_segments(
-    segments: Sequence[DxfLineSegment],
-    distance: float = 120.0,
-    min_segments: int = 2,
+def cluster_opening_geometries(
+    geometries: Sequence[DxfGeometry],
+    distance: float = 20.0,
+    min_geometries: int = 2,
     max_bbox_size: float = 5000.0,
 ) -> list[OpeningCluster]:
-    if not segments:
+    if not geometries:
         return []
 
-    lines = [segment.line for segment in segments]
+    lines = [geometry.representative_line() for geometry in geometries]
     tree = STRtree(lines)
     visited: set[int] = set()
     clusters: list[OpeningCluster] = []
@@ -67,28 +67,11 @@ def cluster_opening_segments(
                 visited.add(neighbor_index)
                 queue.append(neighbor_index)
 
-        cluster = OpeningCluster(tuple(segments[index] for index in component_indices))
-        if not _is_valid_cluster(cluster, min_segments, max_bbox_size):
-            continue
-        clusters.append(cluster)
+        cluster = OpeningCluster(tuple(geometries[index] for index in component_indices))
+        if _is_valid_cluster(cluster, min_geometries, max_bbox_size):
+            clusters.append(cluster)
 
     return sorted(clusters, key=lambda item: (item.bounds[0], item.bounds[1]))
-
-
-def cluster_line_segments(
-    lines: Sequence[LineString],
-    distance: float = 120.0,
-    min_lines: int = 2,
-    max_bbox_size: float = 5000.0,
-) -> list[list[LineString]]:
-    segments = [DxfLineSegment(line=line, source_type="UNKNOWN", is_arc=False) for line in lines]
-    clusters = cluster_opening_segments(
-        segments,
-        distance=distance,
-        min_segments=min_lines,
-        max_bbox_size=max_bbox_size,
-    )
-    return [cluster.lines for cluster in clusters]
 
 
 def cluster_bounds(lines: Sequence[LineString], padding: float = 0.0) -> tuple[float, float, float, float]:
@@ -99,8 +82,8 @@ def cluster_bounds(lines: Sequence[LineString], padding: float = 0.0) -> tuple[f
     return minx, miny, maxx, maxy
 
 
-def _is_valid_cluster(cluster: OpeningCluster, min_segments: int, max_bbox_size: float) -> bool:
-    if len(cluster.segments) < min_segments:
+def _is_valid_cluster(cluster: OpeningCluster, min_geometries: int, max_bbox_size: float) -> bool:
+    if len(cluster.geometries) < min_geometries:
         return False
 
     minx, miny, maxx, maxy = cluster.bounds

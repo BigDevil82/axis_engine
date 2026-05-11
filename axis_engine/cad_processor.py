@@ -6,19 +6,21 @@ from typing import Sequence
 
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 
-from axis_engine.geometry_utils import iter_lines, iter_straight_segments
 from axis_engine.dxf_utils import (
+    DxfGeometry,
+    geometries_to_linework,
     pick_dxf_wall_layers,
     read_dxf,
-    read_dxf_line_segments_from_layers,
-    read_dxf_segments_from_layers,
+    read_dxf_geometries_from_layers,
 )
+from axis_engine.geometry_utils import iter_lines, iter_straight_segments
+from axis_engine.line_network_calibrator import NetworkSegment, SegmentType
 from axis_engine.linework_axis_extractor import (
     extract_wall_axes_from_linework,
     infer_wall_thicknesses,
     repair_wall_linework,
 )
-from axis_engine.opening_clustering import OpeningCluster, cluster_opening_segments
+from axis_engine.opening_clustering import OpeningCluster, cluster_opening_geometries
 from axis_engine.opening_embedment import (
     OPENING_BALCONY,
     OPENING_DOOR,
@@ -26,22 +28,28 @@ from axis_engine.opening_embedment import (
     infer_opening_embedments,
 )
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
-from .line_network_calibrator import NetworkSegment, SegmentType
-from .room_generation import generate_rooms_from_segments
+from axis_engine.room_generation import generate_rooms_from_segments
 
 
-@dataclass
+@dataclass(frozen=True)
 class LayoutArtifacts:
-    wall_lines: list[LineString]
-    wall_centerlines: list[tuple[LineString, float]]
+    wall_geometries: list[DxfGeometry]
+    wall_linework: list[LineString]
+    wall_axes: list[tuple[LineString, float]]
     wall_polygon: MultiPolygon
-    opening_lines: list[LineString]
+    opening_geometries: list[DxfGeometry]
     opening_clusters: list[OpeningCluster]
     opening_embedments: list[OpeningEmbedment]
     components: dict[str, MultiLineString]
 
 
 class CADLayoutProcessor:
+    """Explicit DXF-to-skeleton workflow.
+
+    The processor keeps DXF parsing, wall-axis extraction, opening inference and
+    room generation as separate stages with stable data flowing between them.
+    """
+
     def __init__(
         self,
         source_path: str | Path,
@@ -55,7 +63,7 @@ class CADLayoutProcessor:
     ):
         self.source_path = Path(source_path)
         if self.source_path.suffix.lower() != ".dxf":
-            raise ValueError("CADLayoutProcessor now only supports DXF input.")
+            raise ValueError("CADLayoutProcessor only supports DXF input.")
 
         self.wall_layers = list(wall_layers) if wall_layers else None
         self.opening_layers = list(opening_layers or ["WINDOW"])
@@ -65,13 +73,14 @@ class CADLayoutProcessor:
         self.opening_cluster_options = dict(opening_cluster_options or {})
         self.embedment_options = dict(embedment_options or {})
 
+        self.wall_geometries: list[DxfGeometry] = []
+        self.wall_linework: list[LineString] = []
+        self.wall_axes: list[tuple[LineString, float]] = []
         self.wall_polygon = MultiPolygon()
-        self.wall_centerlines: list[tuple[LineString, float]] = []
-        self.components: dict[str, MultiLineString] = {}
+        self.opening_geometries: list[DxfGeometry] = []
         self.opening_clusters: list[OpeningCluster] = []
         self.opening_embedments: list[OpeningEmbedment] = []
-        self.wall_lines: list[LineString] = []
-        self.opening_lines: list[LineString] = []
+        self.components: dict[str, MultiLineString] = {}
         self.all_segments: list[NetworkSegment] = []
         self.unified_network = MultiLineString()
         self.rooms: list[Polygon] = []
@@ -80,39 +89,69 @@ class CADLayoutProcessor:
 
     def build_geometry(self) -> LayoutArtifacts:
         doc = read_dxf(self.source_path)
-        self._initialize_components()
-        self._load_wall_geometry(doc)
+        self.components = _empty_components()
+        self._load_wall_geometries(doc)
         self._extract_wall_axes()
-        self._build_wall_polygons()
+        self._build_wall_polygon()
         self._load_openings(doc)
         self._geometry_built = True
 
         return LayoutArtifacts(
-            wall_lines=self.wall_lines,
-            wall_centerlines=self.wall_centerlines,
+            wall_geometries=self.wall_geometries,
+            wall_linework=self.wall_linework,
+            wall_axes=self.wall_axes,
             wall_polygon=self.wall_polygon,
-            opening_lines=self.opening_lines,
+            opening_geometries=self.opening_geometries,
             opening_clusters=self.opening_clusters,
             opening_embedments=self.opening_embedments,
             components=self.components,
         )
 
-    def _initialize_components(self):
-        self.components = {
-            "doors": MultiLineString(),
-            "windows": MultiLineString(),
-            "balconies": MultiLineString(),
-        }
+    def extract_centerlines(self) -> list[tuple[LineString, float]]:
+        self._require_geometry()
+        return self.wall_axes
 
-    def _load_wall_geometry(self, doc):
+    def collect_network_segments(self) -> list[NetworkSegment]:
+        self._require_geometry()
+        segments: list[NetworkSegment] = []
+        for line, thickness in self.wall_axes:
+            segments.extend(
+                NetworkSegment(segment, thickness, SegmentType.WALL, thickness >= 180.0)
+                for segment in iter_straight_segments(line)
+            )
+
+        for line in self.components.get("doors", MultiLineString()).geoms:
+            segments.extend(NetworkSegment(segment, 100.0, SegmentType.DOOR, False) for segment in iter_straight_segments(line))
+        for line in self.components.get("windows", MultiLineString()).geoms:
+            segments.extend(NetworkSegment(segment, 100.0, SegmentType.WINDOW, False) for segment in iter_straight_segments(line))
+        for line in self.components.get("balconies", MultiLineString()).geoms:
+            segments.extend(NetworkSegment(segment, 100.0, SegmentType.WINDOW, False) for segment in iter_straight_segments(line))
+
+        if not segments:
+            raise RuntimeError("No semantic network segments available for calibration.")
+        return segments
+
+    def generate_rooms(self) -> list[Polygon]:
+        self._require_geometry()
+        self.all_segments = self.collect_network_segments()
+        result = generate_rooms_from_segments(self.all_segments, structural_thickness_threshold=300.0)
+        self.unified_network = result.unified_network
+        self.room_groups = result.room_groups
+        self.rooms = result.rooms
+        if not self.rooms:
+            raise RuntimeError("Room generation produced no valid rooms.")
+        return self.rooms
+
+    def _load_wall_geometries(self, doc):
         self.wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
-        self.wall_lines = read_dxf_line_segments_from_layers(
+        self.wall_geometries = read_dxf_geometries_from_layers(
             doc,
             self.wall_layers,
             visible_only=self.visible_only,
         )
-        if not self.wall_lines:
-            raise RuntimeError("No wall line segments were loaded from DXF wall layers.")
+        self.wall_linework = geometries_to_linework(self.wall_geometries)
+        if not self.wall_linework:
+            raise RuntimeError("No wall geometry was loaded from DXF wall layers.")
 
     def _extract_wall_axes(self):
         repair_options = {
@@ -122,117 +161,65 @@ class CADLayoutProcessor:
         }
         if "min_feature_len" in self.wall_axis_options:
             repair_options["min_segment_length"] = self.wall_axis_options["min_feature_len"]
-        repaired_edges = repair_wall_linework(self.wall_lines, **repair_options)
 
+        repaired_edges = repair_wall_linework(self.wall_linework, **repair_options)
         thicknesses = self.wall_thicknesses or infer_wall_thicknesses(repaired_edges)
         self.wall_thicknesses = thicknesses
-        self.wall_centerlines = extract_wall_axes_from_linework(
-            self.wall_lines,
+        self.wall_axes = extract_wall_axes_from_linework(
+            self.wall_linework,
             thickness_candidates=thicknesses,
             **self.wall_axis_options,
         )
-        if not self.wall_centerlines:
+        if not self.wall_axes:
             raise RuntimeError("Wall axis extraction produced no centerlines.")
 
-    def _build_wall_polygons(self):
+    def _build_wall_polygon(self):
         self.wall_polygon = build_wall_polygon_from_raw_lines(
-            self.wall_lines,
+            self.wall_linework,
             wall_thicknesses=self.wall_thicknesses,
         )
 
     def _load_openings(self, doc):
         if not self.opening_layers:
-            self.opening_lines = []
-            self.opening_clusters = []
-            self.opening_embedments = []
             return
 
-        opening_segments = read_dxf_segments_from_layers(
+        self.opening_geometries = read_dxf_geometries_from_layers(
             doc,
             self.opening_layers,
             visible_only=self.visible_only,
         )
-        self.opening_lines = [segment.line for segment in opening_segments]
-        self.opening_clusters = cluster_opening_segments(
-            opening_segments,
+        self.opening_clusters = cluster_opening_geometries(
+            self.opening_geometries,
             **self.opening_cluster_options,
         )
         self.opening_embedments = infer_opening_embedments(
-            self.wall_centerlines,
+            self.wall_axes,
             self.opening_clusters,
             **self.embedment_options,
         )
-        self._load_opening_embedments_as_components()
+        self.components = _components_from_embedments(self.opening_embedments)
 
-    def extract_centerlines(self) -> list[tuple[LineString, float]]:
+    def _require_geometry(self):
         if not self._geometry_built:
             raise RuntimeError("Geometry is not built. Run build_geometry() first.")
-        return self.wall_centerlines
 
-    def collect_network_segments(self) -> list[NetworkSegment]:
-        if not self._geometry_built:
-            raise RuntimeError("Geometry is not built. Run build_geometry() first.")
-        segments: list[NetworkSegment] = []
-        for line, thickness in self.wall_centerlines:
-            segments.extend(
-                NetworkSegment(
-                    geometry=segment,
-                    thickness=thickness,
-                    seg_type=SegmentType.WALL,
-                    is_structural=thickness >= 180.0,
-                )
-                for segment in iter_straight_segments(line)
-            )
 
-        for line in self.components.get("doors", MultiLineString()).geoms:
-            segments.extend(
-                NetworkSegment(segment, 100.0, SegmentType.DOOR, False)
-                for segment in iter_straight_segments(line)
-            )
-        for line in self.components.get("windows", MultiLineString()).geoms:
-            segments.extend(
-                NetworkSegment(segment, 100.0, SegmentType.WINDOW, False)
-                for segment in iter_straight_segments(line)
-            )
-        for line in self.components.get("balconies", MultiLineString()).geoms:
-            segments.extend(
-                NetworkSegment(segment, 100.0, SegmentType.WINDOW, False)
-                for segment in iter_straight_segments(line)
-            )
-        if not segments:
-            raise RuntimeError("No semantic network segments available for calibration.")
-        return segments
+def _components_from_embedments(embedments: Sequence[OpeningEmbedment]) -> dict[str, MultiLineString]:
+    by_component: dict[str, list[LineString]] = {"doors": [], "windows": [], "balconies": []}
+    for embedment in embedments:
+        lines = list(iter_lines(embedment.embed_line))
+        if embedment.opening_type == OPENING_DOOR:
+            by_component["doors"].extend(lines)
+        elif embedment.opening_type == OPENING_BALCONY:
+            by_component["balconies"].extend(lines)
+        else:
+            by_component["windows"].extend(lines)
 
-    def generate_rooms(self) -> list[Polygon]:
-        if not self._geometry_built:
-            raise RuntimeError("Geometry is not built. Run build_geometry() first.")
-        self.all_segments = self.collect_network_segments()
-        result = generate_rooms_from_segments(
-            self.all_segments,
-            structural_thickness_threshold=300.0,
-        )
-        self.unified_network = result.unified_network
-        self.room_groups = result.room_groups
-        self.rooms = result.rooms
-        if not self.rooms:
-            raise RuntimeError("Room generation produced no valid rooms.")
-        return self.rooms
+    return {
+        name: MultiLineString(lines) if lines else MultiLineString()
+        for name, lines in by_component.items()
+    }
 
-    def _load_opening_embedments_as_components(self):
-        by_component: dict[str, list[LineString]] = {
-            "doors": [],
-            "windows": [],
-            "balconies": [],
-        }
-        for embedment in self.opening_embedments:
-            lines = list(iter_lines(embedment.embed_line))
-            if embedment.opening_type == OPENING_DOOR:
-                by_component["doors"].extend(lines)
-            elif embedment.opening_type == OPENING_BALCONY:
-                by_component["balconies"].extend(lines)
-            else:
-                by_component["windows"].extend(lines)
 
-        for component_name, lines in by_component.items():
-            self.components[component_name] = MultiLineString(lines) if lines else MultiLineString()
-
+def _empty_components() -> dict[str, MultiLineString]:
+    return {"doors": MultiLineString(), "windows": MultiLineString(), "balconies": MultiLineString()}

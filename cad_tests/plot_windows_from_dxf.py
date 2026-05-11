@@ -41,13 +41,13 @@ def main():
     unmatched = unmatched_opening_indices(len(artifacts.opening_clusters), artifacts.opening_embedments)
 
     print(f"门窗图层: {', '.join(args.opening_layers)}")
-    print(f"门窗原始线段: {len(artifacts.opening_lines)}")
+    print(f"门窗原始图元: {len(artifacts.opening_geometries)}")
     print(f"门窗聚类组: {len(artifacts.opening_clusters)}")
     print(f"门窗嵌入线: {len(artifacts.opening_embedments)}")
     print(f"未匹配门窗: {len(unmatched)}")
 
     plot_result(
-        artifacts.wall_centerlines,
+        artifacts.wall_axes,
         artifacts.opening_clusters,
         artifacts.opening_embedments,
         Path(args.output),
