@@ -240,6 +240,9 @@ def _arc_geometry(entity, transform: Transform2D, layer: str, block_path: tuple[
     radius = float(entity.dxf.radius)
     start_angle = math.radians(float(entity.dxf.start_angle))
     end_angle = math.radians(float(entity.dxf.end_angle))
+    sweep_angle = (end_angle - start_angle) % math.tau
+    if _transform_determinant(transform) < 0:
+        sweep_angle = -sweep_angle
     start_raw = (center_raw[0] + radius * math.cos(start_angle), center_raw[1] + radius * math.sin(start_angle))
     end_raw = (center_raw[0] + radius * math.cos(end_angle), center_raw[1] + radius * math.sin(end_angle))
     return DxfGeometry(
@@ -251,6 +254,7 @@ def _arc_geometry(entity, transform: Transform2D, layer: str, block_path: tuple[
             "end": _apply_transform(end_raw, transform),
             "start_angle": start_angle + _rotation_angle(transform),
             "end_angle": end_angle + _rotation_angle(transform),
+            "sweep_angle": sweep_angle,
         },
         layer,
         "ARC",
@@ -288,6 +292,9 @@ def _polyline_geometries(
             continue
 
         center, start_angle, end_angle, radius = bulge_to_arc(start, end, bulge)
+        sweep_angle = 4.0 * math.atan(bulge)
+        if _transform_determinant(transform) < 0:
+            sweep_angle = -sweep_angle
         center_xy = (float(center.x), float(center.y))
         geometries.append(
             DxfGeometry(
@@ -299,6 +306,7 @@ def _polyline_geometries(
                     "end": _apply_transform(end, transform),
                     "start_angle": float(start_angle) + _rotation_angle(transform),
                     "end_angle": float(end_angle) + _rotation_angle(transform),
+                    "sweep_angle": sweep_angle,
                 },
                 layer,
                 source_type,
@@ -315,16 +323,23 @@ def _arc_points(params: dict[str, Any], tolerance: float) -> list[Point2D]:
     start = params["start"]
     end = params["end"]
     start_angle = math.atan2(start[1] - center[1], start[0] - center[0])
-    end_angle = math.atan2(end[1] - center[1], end[0] - center[0])
-    span = (end_angle - start_angle) % math.tau
-    segment_count = max(6, int(math.ceil(radius * span / max(tolerance, 0.001))))
-    return [
+    if "sweep_angle" in params:
+        span = float(params["sweep_angle"])
+    else:
+        end_angle = math.atan2(end[1] - center[1], end[0] - center[0])
+        span = (end_angle - start_angle) % math.tau
+
+    segment_count = max(6, int(math.ceil(radius * abs(span) / max(tolerance, 0.001))))
+    points = [
         (
             center[0] + radius * math.cos(start_angle + span * index / segment_count),
             center[1] + radius * math.sin(start_angle + span * index / segment_count),
         )
         for index in range(segment_count + 1)
     ]
+    points[0] = start
+    points[-1] = end
+    return points
 
 
 def _circle_points(params: dict[str, Any], tolerance: float) -> list[Point2D]:
@@ -358,6 +373,11 @@ def _local_curve_tolerance(transform: Transform2D, model_tolerance: float = 10.0
 def _average_scale(transform: Transform2D) -> float:
     a, b, c, d, _e, _f = transform
     return (math.hypot(a, c) + math.hypot(b, d)) / 2.0
+
+
+def _transform_determinant(transform: Transform2D) -> float:
+    a, b, c, d, _e, _f = transform
+    return a * d - b * c
 
 
 def _rotation_angle(transform: Transform2D) -> float:

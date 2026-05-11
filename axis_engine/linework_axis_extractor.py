@@ -72,11 +72,11 @@ def repair_wall_linework(
 
 def infer_wall_thicknesses(
     edges: Sequence[AxisAlignedEdge],
-    min_thickness: float = 50.0,
-    max_thickness: float = 300.0,
+    min_thickness: float = 80.0,
+    max_thickness: float = 400.0,
     bin_size: float = 50.0,
     min_overlap: float = 80.0,
-    max_count: int = 3,
+    max_count: int = 5,
 ) -> list[float]:
     """Infer common wall thicknesses from distances between overlapping parallel edges."""
     weights: Counter[float] = Counter()
@@ -132,7 +132,9 @@ def extract_wall_axes_from_linework(
     if not edges:
         return []
 
-    thicknesses = list(thickness_candidates or infer_wall_thicknesses(edges, min_overlap=max(80.0, min_overlap)))
+    thicknesses = list(
+        thickness_candidates or infer_wall_thicknesses(edges, min_overlap=max(80.0, min_overlap))
+    )
     pairs = find_opposite_edge_pairs(
         edges,
         thicknesses,
@@ -277,7 +279,9 @@ def _has_blocking_edge(
     return False
 
 
-def _pair_score(edge: AxisAlignedEdge, other: AxisAlignedEdge, gap: float, thickness: float, overlap: float) -> float:
+def _pair_score(
+    edge: AxisAlignedEdge, other: AxisAlignedEdge, gap: float, thickness: float, overlap: float
+) -> float:
     thickness_error = abs(gap - thickness) / max(thickness, 1.0)
     overlap_ratio = overlap / max(min(edge.length, other.length), 1.0)
     length_support = min(overlap / max(thickness, 1.0), 3.0) / 3.0
@@ -305,6 +309,10 @@ def _merge_axis_lines(
 
     merged_axes: list[tuple[LineString, float]] = []
     for thickness, lines in by_thickness.items():
+        unified = unary_union(lines)
+        if isinstance(unified, LineString):
+            merged_axes.append((unified, thickness))
+            continue
         merged = linemerge(unary_union(lines))
         if isinstance(merged, LineString):
             merged_axes.append((merged, thickness))
@@ -441,10 +449,19 @@ def _connect_orthogonal_axes(
         hx1, hy = h_item[0][0]
         hx2, _ = h_item[0][-1]
         h_min, h_max = sorted((hx1, hx2))
-        search = box(h_min - connection_tolerance, hy - connection_tolerance, h_max + connection_tolerance, hy + connection_tolerance)
+        search = box(
+            h_min - connection_tolerance,
+            hy - connection_tolerance,
+            h_max + connection_tolerance,
+            hy + connection_tolerance,
+        )
 
         for query_result in tree.query(search):
-            local_index = int(query_result) if isinstance(query_result, Integral) else vertical_geoms.index(query_result)
+            local_index = (
+                int(query_result)
+                if isinstance(query_result, Integral)
+                else vertical_geoms.index(query_result)
+            )
             _global_index, v_item = vertical_items[local_index]
             vx, vy1 = v_item[0][0]
             _, vy2 = v_item[0][-1]
@@ -489,7 +506,11 @@ def _near_orthogonal_cross(
     elif hy > v_max:
         vertical_gap = hy - v_max
 
-    return horizontal_gap <= tolerance and vertical_gap <= tolerance and max(horizontal_gap, vertical_gap) <= tolerance
+    return (
+        horizontal_gap <= tolerance
+        and vertical_gap <= tolerance
+        and max(horizontal_gap, vertical_gap) <= tolerance
+    )
 
 
 def _weighted_group_const(group: Sequence[tuple[LineString, float, str]]) -> float:

@@ -65,8 +65,8 @@ class CADLayoutProcessor:
         if self.source_path.suffix.lower() != ".dxf":
             raise ValueError("CADLayoutProcessor only supports DXF input.")
 
-        self.wall_layers = list(wall_layers) if wall_layers else None
-        self.opening_layers = list(opening_layers or ["WINDOW"])
+        self.wall_layers = list(set(wall_layers)) if wall_layers else None
+        self.opening_layers = list(set(opening_layers or ["WINDOW"]))
         self.wall_thicknesses = list(wall_thicknesses) if wall_thicknesses else None
         self.visible_only = visible_only
         self.wall_axis_options = dict(wall_axis_options or {})
@@ -121,11 +121,20 @@ class CADLayoutProcessor:
             )
 
         for line in self.components.get("doors", MultiLineString()).geoms:
-            segments.extend(NetworkSegment(segment, 100.0, SegmentType.DOOR, False) for segment in iter_straight_segments(line))
+            segments.extend(
+                NetworkSegment(segment, 100.0, SegmentType.DOOR, False)
+                for segment in iter_straight_segments(line)
+            )
         for line in self.components.get("windows", MultiLineString()).geoms:
-            segments.extend(NetworkSegment(segment, 100.0, SegmentType.WINDOW, False) for segment in iter_straight_segments(line))
+            segments.extend(
+                NetworkSegment(segment, 100.0, SegmentType.WINDOW, False)
+                for segment in iter_straight_segments(line)
+            )
         for line in self.components.get("balconies", MultiLineString()).geoms:
-            segments.extend(NetworkSegment(segment, 100.0, SegmentType.WINDOW, False) for segment in iter_straight_segments(line))
+            segments.extend(
+                NetworkSegment(segment, 100.0, SegmentType.WINDOW, False)
+                for segment in iter_straight_segments(line)
+            )
 
         if not segments:
             raise RuntimeError("No semantic network segments available for calibration.")
@@ -216,8 +225,7 @@ def _components_from_embedments(embedments: Sequence[OpeningEmbedment]) -> dict[
             by_component["windows"].extend(lines)
 
     return {
-        name: MultiLineString(lines) if lines else MultiLineString()
-        for name, lines in by_component.items()
+        name: MultiLineString(lines) if lines else MultiLineString() for name, lines in by_component.items()
     }
 
 

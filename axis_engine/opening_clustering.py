@@ -34,9 +34,9 @@ class OpeningCluster:
 
 def cluster_opening_geometries(
     geometries: Sequence[DxfGeometry],
-    distance: float = 20.0,
+    distance: float = 100.0,
     min_geometries: int = 2,
-    max_bbox_size: float = 5000.0,
+    max_bbox_size: float = 10000.0,
 ) -> list[OpeningCluster]:
     if not geometries:
         return []
@@ -85,13 +85,13 @@ def cluster_bounds(lines: Sequence[LineString], padding: float = 0.0) -> tuple[f
 def _is_valid_cluster(cluster: OpeningCluster, min_geometries: int, max_bbox_size: float) -> bool:
     if len(cluster.geometries) < min_geometries:
         return False
-
-    minx, miny, maxx, maxy = cluster.bounds
-    width = maxx - minx
-    height = maxy - miny
-    if width <= 1.0 and height <= 1.0:
-        return False
-    return width <= max_bbox_size and height <= max_bbox_size
+    return True
+    # minx, miny, maxx, maxy = cluster.bounds
+    # width = maxx - minx
+    # height = maxy - miny
+    # if width <= 1.0 and height <= 1.0:
+    #     return False
+    # return width <= max_bbox_size and height <= max_bbox_size
 
 
 def _query_tree_indices(tree: STRtree, geoms, geometry) -> list[int]:

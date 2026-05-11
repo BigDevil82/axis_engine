@@ -28,6 +28,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="门窗聚类与嵌入线提取最小验证。")
     parser.add_argument("--dxf", default=DEFAULT_DXF_PATH)
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers", default=["WINDOW"])
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
@@ -36,7 +37,7 @@ def parse_args():
 def main():
     args = parse_args()
     dxf_path = ensure_dxf_exists(args.dxf)
-    processor = CADLayoutProcessor(dxf_path, opening_layers=args.opening_layers)
+    processor = CADLayoutProcessor(dxf_path, wall_layers=args.wall_layers, opening_layers=args.opening_layers)
     artifacts = processor.build_geometry()
     unmatched = unmatched_opening_indices(len(artifacts.opening_clusters), artifacts.opening_embedments)
 
@@ -48,6 +49,7 @@ def main():
 
     plot_result(
         artifacts.wall_axes,
+        artifacts.opening_geometries,
         artifacts.opening_clusters,
         artifacts.opening_embedments,
         Path(args.output),
@@ -56,27 +58,61 @@ def main():
     print(f"输出图片: {args.output}")
 
 
-def plot_result(wall_axes, opening_clusters, opening_embedments, output_path: Path, show: bool = False):
+def plot_result(
+    wall_axes,
+    opening_geometries,
+    opening_clusters,
+    opening_embedments,
+    output_path: Path,
+    show: bool = False,
+):
     fig, ax = create_axes((14, 10))
 
     for line, _thickness in wall_axes:
         x, y = line.xy
-        ax.plot(x, y, color="#b0bec5", linewidth=1.0, zorder=1)
+        ax.plot(x, y, color="red", linewidth=2.0, zorder=1)
 
-    for idx, cluster in enumerate(opening_clusters, start=1):
-        minx, miny, maxx, maxy = cluster_bounds(cluster.lines)
-        rect = patches.Rectangle(
-            (minx, miny),
-            maxx - minx,
-            maxy - miny,
-            fill=False,
-            edgecolor="#8e24aa",
-            linewidth=1.0,
-            linestyle="--",
-            zorder=5,
-        )
-        ax.add_patch(rect)
-        ax.text(minx, maxy, str(idx), fontsize=6, color="#8e24aa")
+    raw_style = {
+        "LINE": {"color": "#455a64", "linewidth": 0.45, "alpha": 0.7, "label": "raw line"},
+        "ARC": {"color": "#ef6c00", "linewidth": 0.8, "alpha": 0.9, "label": "raw arc"},
+        "CIRCLE": {"color": "#1e88e5", "linewidth": 0.7, "alpha": 0.75, "label": "raw circle"},
+        "ELLIPSE": {"color": "#5e35b1", "linewidth": 0.7, "alpha": 0.75, "label": "raw ellipse"},
+    }
+    raw_labels = set()
+    # for geometry in opening_geometries:
+    #     style = raw_style.get(
+    #         geometry.geom_type,
+    #         {"color": "#607d8b", "linewidth": 0.45, "alpha": 0.65, "label": "raw geometry"},
+    #     )
+    #     label = style["label"] if style["label"] not in raw_labels else None
+    #     raw_labels.add(style["label"])
+    #     for line in geometry.as_linework(curve_tolerance=8.0):
+    #         x, y = line.xy
+    #         ax.plot(
+    #             x,
+    #             y,
+    #             color=style["color"],
+    #             linewidth=style["linewidth"],
+    #             alpha=style["alpha"],
+    #             zorder=3,
+    #             label=label,
+    #         )
+    #         label = None
+
+    # for idx, cluster in enumerate(opening_clusters, start=1):
+    #     minx, miny, maxx, maxy = cluster_bounds(cluster.lines)
+    #     rect = patches.Rectangle(
+    #         (minx, miny),
+    #         maxx - minx,
+    #         maxy - miny,
+    #         fill=False,
+    #         edgecolor="#8e24aa",
+    #         linewidth=1.0,
+    #         linestyle="--",
+    #         zorder=5,
+    #     )
+    #     ax.add_patch(rect)
+    #     ax.text(minx, maxy, str(idx), fontsize=6, color="#8e24aa")
 
     color_map = {"door": "#00acc1", "window": "#43a047", "balcony": "#f57c00"}
     seen_labels = set()
@@ -92,11 +128,10 @@ def plot_result(wall_axes, opening_clusters, opening_embedments, output_path: Pa
             label = None
 
     ax.set_title("Opening Clusters And Embedments")
-    if seen_labels:
+    if seen_labels or raw_labels:
         ax.legend(loc="upper right")
     save_and_maybe_show(fig, output_path, show=show)
 
 
 if __name__ == "__main__":
     main()
-
