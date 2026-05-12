@@ -89,15 +89,25 @@ def plot_result(
 ):
     fig, ax = create_axes((14, 10))
 
-    buffered_network = build_buffered_network(wall_axes, opening_embedments, 150)
+    buffered_network = build_buffered_network(wall_axes, opening_embedments, 100)
     if not buffered_network.is_empty:
         geoms = list(buffered_network.geoms) if hasattr(buffered_network, "geoms") else [buffered_network]
         for polygon in geoms:
-            x, y = polygon.exterior.xy
-            ax.fill(x, y, color="gray", alpha=0.45, linewidth=0, zorder=-2, label=None)
+            # x, y = polygon.exterior.xy
+            # ax.fill(x, y, color="gray", alpha=0.45, linewidth=0, zorder=-2, label=None)
+            import random
+
             for interior in polygon.interiors:
                 x, y = interior.xy
-                ax.fill(x, y, color="white", alpha=1.0, linewidth=0, zorder=-1, label=None)
+                ax.fill(
+                    x,
+                    y,
+                    color=f"#{random.randint(0, 0xFFFFFF):06x}",
+                    alpha=0.4,
+                    linewidth=0,
+                    zorder=-1,
+                    label=None,
+                )
 
     axis_label_added = False
     for line in axis_linework:
@@ -200,7 +210,7 @@ def build_buffered_network(wall_axes, opening_embedments, buffer_distance: float
         return MultiLineString().buffer(0)
 
     network = linemerge(unary_union(lines))
-    return network.buffer(buffer_distance, cap_style=2, join_style=2)
+    return network.buffer(buffer_distance, cap_style="square", join_style="mitre")
 
 
 def dominant_wall_thickness(wall_axes) -> float | None:
