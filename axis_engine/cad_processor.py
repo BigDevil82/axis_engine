@@ -125,6 +125,8 @@ class CADLayoutProcessor:
         self._load_openings(doc)
         self._align_openings_to_reference_axes()
         self._calibrate_skeleton_topology()
+        self._align_wall_axes_to_reference_axes()
+        self._align_openings_to_reference_axes()
         self._geometry_built = True
 
         return LayoutArtifacts(

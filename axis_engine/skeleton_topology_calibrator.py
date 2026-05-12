@@ -254,7 +254,7 @@ def _snap_segment_endpoints(
             endpoint_tree,
             tolerance,
         )
-        snapped.append(_rebuild_axis_segment(segment, start, end, start_snapped, end_snapped))
+        snapped.append(_rebuild_axis_segment(segment, start, end))
     return [segment for segment in snapped if segment.length > 0]
 
 
@@ -302,36 +302,13 @@ def _rebuild_axis_segment(
     original: _AxisSegment,
     start: Point2D,
     end: Point2D,
-    start_snapped: bool,
-    end_snapped: bool,
-    const_tolerance: float = 8.0,
 ) -> _AxisSegment:
     if original.axis == "h":
-        y_values = []
-        if start_snapped:
-            y_values.append(start[1])
-        if end_snapped:
-            y_values.append(end[1])
-        y = _consistent_snapped_const(y_values, original.const, const_tolerance)
         x1, x2 = sorted((start[0], end[0]))
-        return _copy_segment(original, (x1, y), (x2, y))
+        return _copy_segment(original, (x1, original.const), (x2, original.const))
 
-    x_values = []
-    if start_snapped:
-        x_values.append(start[0])
-    if end_snapped:
-        x_values.append(end[0])
-    x = _consistent_snapped_const(x_values, original.const, const_tolerance)
     y1, y2 = sorted((start[1], end[1]))
-    return _copy_segment(original, (x, y1), (x, y2))
-
-
-def _consistent_snapped_const(values: Sequence[float], fallback: float, tolerance: float) -> float:
-    if not values:
-        return fallback
-    if max(values) - min(values) > tolerance:
-        return fallback
-    return sum(values) / len(values)
+    return _copy_segment(original, (original.const, y1), (original.const, y2))
 
 
 def _split_at_orthogonal_intersections(

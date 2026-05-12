@@ -89,12 +89,15 @@ def plot_result(
 ):
     fig, ax = create_axes((14, 10))
 
-    buffered_network = build_buffered_network(wall_axes, opening_embedments)
+    buffered_network = build_buffered_network(wall_axes, opening_embedments, 150)
     if not buffered_network.is_empty:
         geoms = list(buffered_network.geoms) if hasattr(buffered_network, "geoms") else [buffered_network]
         for polygon in geoms:
             x, y = polygon.exterior.xy
             ax.fill(x, y, color="gray", alpha=0.45, linewidth=0, zorder=-2, label=None)
+            for interior in polygon.interiors:
+                x, y = interior.xy
+                ax.fill(x, y, color="white", alpha=1.0, linewidth=0, zorder=-1, label=None)
 
     axis_label_added = False
     for line in axis_linework:
