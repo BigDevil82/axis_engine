@@ -61,23 +61,35 @@ def plot_result(wall_linework, axes, output_path: Path, show: bool = False):
         x, y = line.xy
         ax.plot(x, y, color="#9aa0a6", linewidth=0.5, alpha=1, zorder=3)
 
-    axis_label_added = False
-    for line, _thickness in axes:
+    primary_thickness = dominant_wall_thickness(axes)
+    seen_labels = set()
+    for line, thickness in axes:
+        is_primary = thickness == primary_thickness
+        label = "primary wall axis" if is_primary else "secondary wall axis"
         x, y = line.xy
         ax.plot(
             x,
             y,
-            color="red",
-            linewidth=1.6,
+            color="red" if is_primary else "#7e57c2",
+            linewidth=1.8 if is_primary else 1.2,
             zorder=10,
-            label="wall axis" if not axis_label_added else None,
+            label=label if label not in seen_labels else None,
         )
-        axis_label_added = True
+        seen_labels.add(label)
 
     ax.set_title("Wall Axis Extraction (DXF)")
-    if axis_label_added:
+    if seen_labels:
         ax.legend(loc="upper right")
     save_and_maybe_show(fig, output_path, show=show)
+
+
+def dominant_wall_thickness(axes) -> float | None:
+    thickness_lengths = {}
+    for line, thickness in axes:
+        thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
+    if not thickness_lengths:
+        return None
+    return max(thickness_lengths.items(), key=lambda item: item[1])[0]
 
 
 if __name__ == "__main__":

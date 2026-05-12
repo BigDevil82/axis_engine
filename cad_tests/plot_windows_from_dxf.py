@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Counter
 
 import matplotlib.patches as patches
 from shapely.geometry import MultiLineString
@@ -47,8 +48,17 @@ def main():
         opening_layers=args.opening_layers,
     )
     artifacts = processor.build_geometry()
+    thickness_lengths = {}
+    for line, thickness in artifacts.wall_axes:
+        thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
     unmatched = unmatched_opening_indices(len(artifacts.opening_clusters), artifacts.opening_embedments)
 
+    if thickness_lengths:
+        summary = ", ".join(
+            f"{thick:g}: {length:.1f}"
+            for thick, length in sorted(thickness_lengths.items(), key=lambda x: x[1], reverse=True)
+        )
+        print(f"轴线墙厚长度分布: {summary}")
     print(f"门窗图层: {', '.join(args.opening_layers)}")
     print(f"参考轴线图元: {len(artifacts.axis_geometries)}")
     print(f"门窗原始图元: {len(artifacts.opening_geometries)}")
@@ -101,9 +111,21 @@ def plot_result(
         )
         axis_label_added = True
 
-    for line, _thickness in wall_axes:
+    primary_thickness = dominant_wall_thickness(wall_axes)
+    wall_labels = set()
+    for line, thickness in wall_axes:
         x, y = line.xy
-        ax.plot(x, y, color="red", linewidth=2.0, zorder=1)
+        is_primary = thickness == primary_thickness
+        label = "primary wall axis" if is_primary else "secondary wall axis"
+        ax.plot(
+            x,
+            y,
+            color="red" if is_primary else "#7e57c2",
+            linewidth=2.0 if is_primary else 1.5,
+            zorder=1 if is_primary else 2,
+            label=label if label not in wall_labels else None,
+        )
+        wall_labels.add(label)
 
     raw_style = {
         "LINE": {"color": "#455a64", "linewidth": 0.45, "alpha": 0.7, "label": "raw line"},
@@ -161,7 +183,7 @@ def plot_result(
             label = None
 
     ax.set_title("Opening Clusters And Embedments")
-    if seen_labels or raw_labels or axis_label_added:
+    if seen_labels or raw_labels or axis_label_added or wall_labels:
         ax.legend(loc="upper right")
     save_and_maybe_show(fig, output_path, show=show)
 
@@ -176,6 +198,15 @@ def build_buffered_network(wall_axes, opening_embedments, buffer_distance: float
 
     network = linemerge(unary_union(lines))
     return network.buffer(buffer_distance, cap_style=2, join_style=2)
+
+
+def dominant_wall_thickness(wall_axes) -> float | None:
+    thickness_lengths = {}
+    for line, thickness in wall_axes:
+        thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
+    if not thickness_lengths:
+        return None
+    return max(thickness_lengths.items(), key=lambda item: item[1])[0]
 
 
 if __name__ == "__main__":

@@ -47,6 +47,15 @@ class LayoutArtifacts:
     components: dict[str, MultiLineString]
 
 
+@dataclass(frozen=True)
+class AxisSupportSegment:
+    axis: str
+    const: float
+    start: float
+    end: float
+    length: float
+
+
 class CADLayoutProcessor:
     """Explicit DXF-to-skeleton workflow.
 
@@ -67,6 +76,8 @@ class CADLayoutProcessor:
         embedment_options: dict | None = None,
         topology_calibration_options: dict | None = None,
         reference_axis_snap_tolerance: float = 100.0,
+        core_axis_min_total_length: float = 5000.0,
+        core_axis_group_tolerance: float = 80.0,
     ):
         self.source_path = Path(source_path)
         if self.source_path.suffix.lower() != ".dxf":
@@ -82,6 +93,8 @@ class CADLayoutProcessor:
         self.embedment_options = dict(embedment_options or {})
         self.topology_calibration_options = dict(topology_calibration_options or {})
         self.reference_axis_snap_tolerance = float(reference_axis_snap_tolerance)
+        self.core_axis_min_total_length = float(core_axis_min_total_length)
+        self.core_axis_group_tolerance = float(core_axis_group_tolerance)
 
         self.axis_geometries: list[DxfGeometry] = []
         self.axis_linework: list[LineString] = []
@@ -106,6 +119,7 @@ class CADLayoutProcessor:
         self._load_reference_axes(doc)
         self._load_wall_geometries(doc)
         self._extract_wall_axes()
+        self._augment_reference_axes_from_core_walls()
         self._align_wall_axes_to_reference_axes()
         self._build_wall_polygon()
         self._load_openings(doc)
@@ -183,6 +197,7 @@ class CADLayoutProcessor:
         )
         self.axis_linework = geometries_to_linework(self.axis_geometries)
         self.reference_axes = ReferenceAxisGrid.from_lines(self.axis_linework)
+        self.axis_linework = normalize_reference_axis_linework(self.axis_linework, self.reference_axes)
 
     def _load_wall_geometries(self, doc):
         self.wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
@@ -214,6 +229,19 @@ class CADLayoutProcessor:
         )
         if not self.wall_axes:
             raise RuntimeError("Wall axis extraction produced no centerlines.")
+
+    def _augment_reference_axes_from_core_walls(self):
+        inferred_axis_lines = infer_core_wall_axis_lines(
+            self.wall_axes,
+            min_total_length=self.core_axis_min_total_length,
+            group_tolerance=self.core_axis_group_tolerance,
+        )
+        if not inferred_axis_lines:
+            return
+
+        self.axis_linework.extend(inferred_axis_lines)
+        self.reference_axes = ReferenceAxisGrid.from_lines(self.axis_linework)
+        self.axis_linework = normalize_reference_axis_linework(self.axis_linework, self.reference_axes)
 
     def _align_wall_axes_to_reference_axes(self):
         if self.reference_axes.is_empty:
@@ -353,6 +381,158 @@ class ReferenceAxisGrid:
         if abs(nearest - value) > snap_tolerance:
             return None
         return nearest
+
+    def nearest_x(self, value: float) -> float | None:
+        return self._nearest(value, self.x_axes)
+
+    def nearest_y(self, value: float) -> float | None:
+        return self._nearest(value, self.y_axes)
+
+    def _nearest(self, value: float, candidates: Sequence[float]) -> float | None:
+        if not candidates:
+            return None
+        return min(candidates, key=lambda candidate: abs(candidate - value))
+
+
+def infer_core_wall_axis_lines(
+    wall_axes: Sequence[tuple[LineString, float]],
+    min_total_length: float = 5000.0,
+    group_tolerance: float = 80.0,
+    axis_tolerance: float = 8.0,
+) -> list[LineString]:
+    dominant_thickness = _dominant_wall_thickness(wall_axes)
+    if dominant_thickness is None:
+        return []
+
+    support_segments = [
+        support
+        for line, thickness in wall_axes
+        if thickness == dominant_thickness
+        for segment in iter_straight_segments(line)
+        for support in [_axis_support_segment(segment, axis_tolerance)]
+        if support is not None
+    ]
+
+    inferred_lines: list[LineString] = []
+    for axis in ("h", "v"):
+        axis_supports = [support for support in support_segments if support.axis == axis]
+        for group in _group_axis_supports(axis_supports, group_tolerance):
+            total_length = sum(support.length for support in group)
+            if total_length < min_total_length:
+                continue
+
+            const = _weighted_const(group)
+            start = min(support.start for support in group)
+            end = max(support.end for support in group)
+            if end <= start:
+                continue
+
+            if axis == "h":
+                inferred_lines.append(LineString([(start, const), (end, const)]))
+            else:
+                inferred_lines.append(LineString([(const, start), (const, end)]))
+    return inferred_lines
+
+
+def normalize_reference_axis_linework(
+    lines: Sequence[LineString],
+    grid: ReferenceAxisGrid,
+    axis_tolerance: float = 8.0,
+    merge_gap_tolerance: float = 5.0,
+) -> list[LineString]:
+    intervals_by_axis: dict[tuple[str, float], list[tuple[float, float]]] = {}
+    for line in lines:
+        support = _axis_support_segment(line, axis_tolerance)
+        if support is None:
+            continue
+
+        if support.axis == "h":
+            const = grid.nearest_y(support.const)
+        else:
+            const = grid.nearest_x(support.const)
+        if const is None:
+            continue
+
+        intervals_by_axis.setdefault((support.axis, const), []).append((support.start, support.end))
+
+    normalized: list[LineString] = []
+    for (axis, const), intervals in intervals_by_axis.items():
+        for start, end in _merge_intervals(intervals, merge_gap_tolerance):
+            if end <= start:
+                continue
+            if axis == "h":
+                normalized.append(LineString([(start, const), (end, const)]))
+            else:
+                normalized.append(LineString([(const, start), (const, end)]))
+    return normalized
+
+
+def _dominant_wall_thickness(wall_axes: Sequence[tuple[LineString, float]]) -> float | None:
+    thickness_lengths: dict[float, float] = {}
+    for line, thickness in wall_axes:
+        thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
+    if not thickness_lengths:
+        return None
+    return sorted(thickness_lengths.items(), key=lambda item: item[1], reverse=True)[0][0]
+
+
+def _axis_support_segment(line: LineString, axis_tolerance: float) -> AxisSupportSegment | None:
+    coords = list(line.coords)
+    if len(coords) < 2:
+        return None
+
+    start = coords[0]
+    end = coords[-1]
+    dx = abs(end[0] - start[0])
+    dy = abs(end[1] - start[1])
+    if dy <= axis_tolerance and dx > axis_tolerance:
+        x1, x2 = sorted((start[0], end[0]))
+        return AxisSupportSegment("h", (start[1] + end[1]) / 2.0, x1, x2, x2 - x1)
+    if dx <= axis_tolerance and dy > axis_tolerance:
+        y1, y2 = sorted((start[1], end[1]))
+        return AxisSupportSegment("v", (start[0] + end[0]) / 2.0, y1, y2, y2 - y1)
+    return None
+
+
+def _group_axis_supports(
+    supports: Sequence[AxisSupportSegment],
+    group_tolerance: float,
+) -> list[list[AxisSupportSegment]]:
+    groups: list[list[AxisSupportSegment]] = []
+    for support in sorted(supports, key=lambda item: item.const):
+        target_group = None
+        for group in groups:
+            if abs(support.const - _weighted_const(group)) <= group_tolerance:
+                target_group = group
+                break
+        if target_group is None:
+            groups.append([support])
+        else:
+            target_group.append(support)
+    return groups
+
+
+def _weighted_const(group: Sequence[AxisSupportSegment]) -> float:
+    total_length = sum(support.length for support in group)
+    if total_length <= 0:
+        return group[0].const
+    return sum(support.const * support.length for support in group) / total_length
+
+
+def _merge_intervals(
+    intervals: Sequence[tuple[float, float]],
+    gap_tolerance: float,
+) -> list[tuple[float, float]]:
+    if not intervals:
+        return []
+
+    merged: list[list[float]] = []
+    for start, end in sorted((min(a, b), max(a, b)) for a, b in intervals):
+        if not merged or start > merged[-1][1] + gap_tolerance:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
 
 
 def _dedupe_sorted_values(values: Sequence[float], tolerance: float = 5.0) -> list[float]:

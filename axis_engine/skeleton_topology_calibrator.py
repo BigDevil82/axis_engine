@@ -62,11 +62,13 @@ class _AxisSegment:
 def calibrate_skeleton_topology(
     wall_axes: Sequence[tuple[LineString, float]],
     opening_embedments: Sequence[OpeningEmbedment],
+    parallel_align_tolerance: float = 30.0,
+    parallel_gap_tolerance: float = 120.0,
     endpoint_snap_tolerance: float = 120.0,
     axis_tolerance: float = 8.0,
     min_segment_length: float = 1.0,
 ) -> SkeletonCalibrationResult:
-    """Snap near endpoints together and split orthogonal crossings into nodes."""
+    """Regularize the orthogonal skeleton into an explicitly connected graph."""
     records = _collect_records(wall_axes, opening_embedments, min_segment_length)
     segments = [
         segment
@@ -74,7 +76,13 @@ def calibrate_skeleton_topology(
         for segment in [_axis_segment_from_record(record, axis_tolerance)]
         if segment is not None and segment.length >= min_segment_length
     ]
-    snapped = _snap_segment_endpoints(segments, endpoint_snap_tolerance)
+    collinear = _calibrate_near_collinear_segments(
+        segments,
+        const_tolerance=parallel_align_tolerance,
+        gap_tolerance=parallel_gap_tolerance,
+        min_segment_length=min_segment_length,
+    )
+    snapped = _snap_segment_endpoints(collinear, endpoint_snap_tolerance)
     split_segments = _split_at_orthogonal_intersections(snapped, min_segment_length)
     return _restore_semantic_segments(split_segments)
 
@@ -110,6 +118,100 @@ def _axis_segment_from_record(record: _SegmentRecord, axis_tolerance: float) -> 
         y1, y2 = sorted((start[1], end[1]))
         return _AxisSegment((x, y1), (x, y2), "v", record.source, record.source_index, record.thickness, record.opening)
     return None
+
+
+def _calibrate_near_collinear_segments(
+    segments: Sequence[_AxisSegment],
+    const_tolerance: float,
+    gap_tolerance: float,
+    min_segment_length: float,
+) -> list[_AxisSegment]:
+    result: list[_AxisSegment] = []
+    for axis in ("h", "v"):
+        axis_segments = [segment for segment in segments if segment.axis == axis]
+        for group in _near_collinear_groups(axis_segments, const_tolerance, gap_tolerance):
+            result.extend(_align_collinear_group(group, gap_tolerance, min_segment_length))
+    return result
+
+
+def _near_collinear_groups(
+    segments: Sequence[_AxisSegment],
+    const_tolerance: float,
+    gap_tolerance: float,
+) -> list[list[_AxisSegment]]:
+    if not segments:
+        return []
+
+    parent = list(range(len(segments)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(first: int, second: int):
+        root_first = find(first)
+        root_second = find(second)
+        if root_first != root_second:
+            parent[root_second] = root_first
+
+    for first_index, first in enumerate(segments):
+        for second_index in range(first_index + 1, len(segments)):
+            second = segments[second_index]
+            if abs(first.const - second.const) > const_tolerance:
+                continue
+            if _interval_gap(first.interval, second.interval) > gap_tolerance:
+                continue
+            union(first_index, second_index)
+
+    groups_by_root: dict[int, list[_AxisSegment]] = {}
+    for index, segment in enumerate(segments):
+        groups_by_root.setdefault(find(index), []).append(segment)
+    return list(groups_by_root.values())
+
+
+def _align_collinear_group(
+    group: Sequence[_AxisSegment],
+    gap_tolerance: float,
+    min_segment_length: float,
+) -> list[_AxisSegment]:
+    if len(group) == 1:
+        return list(group)
+
+    const = max(group, key=lambda segment: segment.length).const
+    mutable = [
+        {
+            "segment": segment,
+            "start": segment.interval[0],
+            "end": segment.interval[1],
+        }
+        for segment in sorted(group, key=lambda item: (item.interval[0], item.interval[1]))
+    ]
+
+    for previous, current in zip(mutable, mutable[1:]):
+        gap = current["start"] - previous["end"]
+        if 0.0 < gap <= gap_tolerance:
+            midpoint = (previous["end"] + current["start"]) / 2.0
+            previous["end"] = midpoint
+            current["start"] = midpoint
+
+    aligned: list[_AxisSegment] = []
+    for item in mutable:
+        start_value = float(item["start"])
+        end_value = float(item["end"])
+        if end_value - start_value < min_segment_length:
+            continue
+        segment = item["segment"]
+        if segment.axis == "h":
+            aligned.append(_copy_segment(segment, (start_value, const), (end_value, const)))
+        else:
+            aligned.append(_copy_segment(segment, (const, start_value), (const, end_value)))
+    return aligned
+
+
+def _interval_gap(first: tuple[float, float], second: tuple[float, float]) -> float:
+    return max(second[0] - first[1], first[0] - second[1], 0.0)
 
 
 def _snap_segment_endpoints(
@@ -202,6 +304,7 @@ def _rebuild_axis_segment(
     end: Point2D,
     start_snapped: bool,
     end_snapped: bool,
+    const_tolerance: float = 8.0,
 ) -> _AxisSegment:
     if original.axis == "h":
         y_values = []
@@ -209,7 +312,7 @@ def _rebuild_axis_segment(
             y_values.append(start[1])
         if end_snapped:
             y_values.append(end[1])
-        y = sum(y_values) / len(y_values) if y_values else original.const
+        y = _consistent_snapped_const(y_values, original.const, const_tolerance)
         x1, x2 = sorted((start[0], end[0]))
         return _copy_segment(original, (x1, y), (x2, y))
 
@@ -218,9 +321,17 @@ def _rebuild_axis_segment(
         x_values.append(start[0])
     if end_snapped:
         x_values.append(end[0])
-    x = sum(x_values) / len(x_values) if x_values else original.const
+    x = _consistent_snapped_const(x_values, original.const, const_tolerance)
     y1, y2 = sorted((start[1], end[1]))
     return _copy_segment(original, (x, y1), (x, y2))
+
+
+def _consistent_snapped_const(values: Sequence[float], fallback: float, tolerance: float) -> float:
+    if not values:
+        return fallback
+    if max(values) - min(values) > tolerance:
+        return fallback
+    return sum(values) / len(values)
 
 
 def _split_at_orthogonal_intersections(
