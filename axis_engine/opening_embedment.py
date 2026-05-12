@@ -145,9 +145,9 @@ def infer_opening_candidates(
     axis_tolerance: float = 8.0,
 ) -> list[EmbedmentCandidate]:
     candidates: list[EmbedmentCandidate] = []
-    door_line, reason = _door_embed_line(cluster)
-    if door_line is not None:
-        candidates.append(EmbedmentCandidate(OPENING_DOOR, door_line, reason))
+    door_candidates = _door_embed_candidates(cluster)
+    candidates.extend(EmbedmentCandidate(OPENING_DOOR, line, reason) for line, reason in door_candidates)
+    door_lines = [line for line, _reason in door_candidates]
 
     parallel_lines = _parallel_line_embed_lines(
         cluster,
@@ -159,7 +159,7 @@ def infer_opening_candidates(
     candidates.extend(
         EmbedmentCandidate(OPENING_WINDOW, line, "parallel_long_line_group")
         for line in parallel_lines
-        if door_line is None or not _looks_like_door_leaf_line(line, door_line)
+        if not any(_looks_like_door_leaf_line(line, door_line) for door_line in door_lines)
     )
     return candidates
 
@@ -249,27 +249,81 @@ def _embed_lines_are_duplicates(first: LineString, second: LineString, tolerance
     return overlap / max(shorter, 1.0) >= 0.6
 
 
-def _door_embed_line(cluster: OpeningCluster) -> tuple[LineString | None, str]:
+def _door_embed_candidates(
+    cluster: OpeningCluster,
+    duplicate_center_tolerance: float = 100.0,
+    double_door_max_center_distance: float = 1800.0,
+) -> list[tuple[LineString, str]]:
     arcs = [arc for arc in cluster.arcs if arc.center and arc.start and arc.end]
-    if len(arcs) >= 2:
-        centers = [arc.center for arc in arcs if arc.center is not None]
-        first, second = _farthest_pair(centers)
-        if first and second and Point(first).distance(Point(second)) > 100.0:
-            return LineString([first, second]), "double_door_arc_centers"
-
     if not arcs:
-        return None, "door_without_arc"
+        return []
 
-    arc = max(arcs, key=lambda item: float(item.params.get("radius", 0.0)))
+    candidates: list[tuple[LineString, str]] = []
+    used: set[int] = set()
+    for index, arc in enumerate(arcs):
+        if index in used:
+            continue
+
+        pair_index = _nearest_double_door_arc_index(
+            arc,
+            arcs,
+            index,
+            used,
+            duplicate_center_tolerance,
+            double_door_max_center_distance,
+        )
+        if pair_index is not None:
+            used.add(index)
+            used.add(pair_index)
+            candidates.append((LineString([arc.center, arcs[pair_index].center]), "double_door_arc_centers"))
+            continue
+
+        used.add(index)
+        line = _single_arc_door_line(cluster, arc)
+        if line is not None:
+            candidates.append((line, "single_door_arc_hinge_to_closed_endpoint"))
+
+    return candidates
+
+
+def _nearest_double_door_arc_index(
+    arc,
+    arcs: Sequence,
+    index: int,
+    used: set[int],
+    duplicate_center_tolerance: float,
+    max_center_distance: float,
+) -> int | None:
+    best_index = None
+    best_distance = float("inf")
+    center = arc.center
+    if center is None:
+        return None
+
+    for other_index, other in enumerate(arcs):
+        if other_index == index or other_index in used or other.center is None:
+            continue
+        distance = Point(center).distance(Point(other.center))
+        if distance <= duplicate_center_tolerance:
+            continue
+        if distance > max_center_distance:
+            continue
+        if distance < best_distance:
+            best_distance = distance
+            best_index = other_index
+    return best_index
+
+
+def _single_arc_door_line(cluster: OpeningCluster, arc) -> LineString | None:
     center = arc.center
     start = arc.start
     end = arc.end
     if center is None or start is None or end is None:
-        return None, "invalid_arc"
+        return None
 
     opened_endpoint = _endpoint_supported_by_leaf(cluster, center, (start, end))
     closed_endpoint = end if opened_endpoint == start else start
-    return LineString([center, closed_endpoint]), "single_door_arc_hinge_to_closed_endpoint"
+    return LineString([center, closed_endpoint])
 
 
 def _parallel_line_embed_lines(
@@ -326,17 +380,51 @@ def _cluster_parallel_features(
     features: Sequence[AxisLineFeature],
     distance: float,
 ) -> list[list[AxisLineFeature]]:
-    sorted_features = sorted(features, key=lambda item: item.const)
-    if not sorted_features:
+    if not features:
         return []
 
-    groups: list[list[AxisLineFeature]] = [[sorted_features[0]]]
-    for feature in sorted_features[1:]:
-        if abs(feature.const - groups[-1][-1].const) <= distance:
-            groups[-1].append(feature)
-        else:
-            groups.append([feature])
-    return groups
+    parent = list(range(len(features)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(first: int, second: int):
+        root_first = find(first)
+        root_second = find(second)
+        if root_first != root_second:
+            parent[root_second] = root_first
+
+    for first_index, first in enumerate(features):
+        for second_index in range(first_index + 1, len(features)):
+            second = features[second_index]
+            if abs(first.const - second.const) > distance:
+                continue
+            if not _parallel_features_projection_related(first, second):
+                continue
+            union(first_index, second_index)
+
+    groups_by_root: dict[int, list[AxisLineFeature]] = {}
+    for index, feature in enumerate(features):
+        groups_by_root.setdefault(find(index), []).append(feature)
+    return [sorted(group, key=lambda item: (item.const, item.start, item.end)) for group in groups_by_root.values()]
+
+
+def _parallel_features_projection_related(
+    first: AxisLineFeature,
+    second: AxisLineFeature,
+    max_projection_gap: float = 120.0,
+    min_overlap_ratio: float = 0.5,
+) -> bool:
+    overlap = min(first.end, second.end) - max(first.start, second.start)
+    if overlap > 0:
+        shorter = min(first.length, second.length)
+        return overlap / max(shorter, 1.0) >= min_overlap_ratio
+
+    gap = max(second.start - first.end, first.start - second.end, 0.0)
+    return gap <= max_projection_gap
 
 
 def _endpoint_supported_by_leaf(
