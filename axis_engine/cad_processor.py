@@ -30,6 +30,7 @@ from axis_engine.opening_embedment import (
 )
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 from axis_engine.room_generation import generate_rooms_from_segments
+from axis_engine.skeleton_spur_pruner import prune_skeleton_spurs
 from axis_engine.skeleton_topology_calibrator import calibrate_skeleton_topology
 
 
@@ -75,6 +76,7 @@ class CADLayoutProcessor:
         opening_cluster_options: dict | None = None,
         embedment_options: dict | None = None,
         topology_calibration_options: dict | None = None,
+        spur_prune_options: dict | None = None,
         reference_axis_snap_tolerance: float = 100.0,
         core_axis_min_total_length: float = 5000.0,
         core_axis_group_tolerance: float = 80.0,
@@ -92,6 +94,7 @@ class CADLayoutProcessor:
         self.opening_cluster_options = dict(opening_cluster_options or {})
         self.embedment_options = dict(embedment_options or {})
         self.topology_calibration_options = dict(topology_calibration_options or {})
+        self.spur_prune_options = dict(spur_prune_options or {})
         self.reference_axis_snap_tolerance = float(reference_axis_snap_tolerance)
         self.core_axis_min_total_length = float(core_axis_min_total_length)
         self.core_axis_group_tolerance = float(core_axis_group_tolerance)
@@ -127,6 +130,7 @@ class CADLayoutProcessor:
         self._calibrate_skeleton_topology()
         self._align_wall_axes_to_reference_axes()
         self._align_openings_to_reference_axes()
+        self._prune_skeleton_spurs()
         self._geometry_built = True
 
         return LayoutArtifacts(
@@ -309,6 +313,19 @@ class CADLayoutProcessor:
             self.wall_axes,
             self.opening_embedments,
             **self.topology_calibration_options,
+        )
+        self.wall_axes = result.wall_axes
+        self.opening_embedments = result.opening_embedments
+        self.components = _components_from_embedments(self.opening_embedments)
+
+    def _prune_skeleton_spurs(self):
+        if not self.wall_axes and not self.opening_embedments:
+            return
+
+        result = prune_skeleton_spurs(
+            self.wall_axes,
+            self.opening_embedments,
+            **self.spur_prune_options,
         )
         self.wall_axes = result.wall_axes
         self.opening_embedments = result.opening_embedments
