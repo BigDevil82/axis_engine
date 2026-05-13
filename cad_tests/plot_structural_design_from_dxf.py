@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from collections import Counter
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from axis_engine.cad_processor import CADLayoutProcessor
+from axis_engine.structural_design import BeamKind, StructuralDesigner
+from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
+from cad_tests.plot_common import create_axes, save_and_maybe_show
+
+DEFAULT_OUTPUT_PATH = str(Path(DEFAULT_DXF_PATH).with_name("structural_design.png"))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="结构布置结果最小可视化验证。")
+    parser.add_argument("--dxf", default=DEFAULT_DXF_PATH)
+    parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument("--wall-layer", action="append", dest="wall_layers")
+    parser.add_argument("--axis-layer", action="append", dest="axis_layers")
+    parser.add_argument("--opening-layer", action="append", dest="opening_layers", default=["WINDOW"])
+    parser.add_argument("--show", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    dxf_path = ensure_dxf_exists(args.dxf)
+    processor = CADLayoutProcessor(
+        dxf_path,
+        wall_layers=args.wall_layers,
+        axis_layers=args.axis_layers,
+        opening_layers=args.opening_layers,
+    )
+    artifacts = processor.build_geometry()
+    result = StructuralDesigner().design(artifacts)
+
+    beam_counts = Counter(beam.kind.value for beam in result.beams)
+    print(f"主剪力墙墙厚: {result.dominant_wall_thickness}")
+    print(f"剪力墙: {len(result.shear_walls)}")
+    print(f"梁: {len(result.beams)} ({', '.join(f'{k}: {v}' for k, v in sorted(beam_counts.items()))})")
+    print(f"楼板空间: {len(result.slab_regions)}")
+
+    plot_result(artifacts, result, Path(args.output), show=args.show)
+    print(f"输出图片: {args.output}")
+
+
+def plot_result(artifacts, result, output_path: Path, show: bool = False):
+    fig, ax = create_axes((16, 10))
+
+    for region in result.slab_regions:
+        polygon = region.recovered_polygon
+        if polygon.is_empty:
+            continue
+        x, y = polygon.exterior.xy
+        ax.fill(x, y, color="#e8f5e9", alpha=0.35, linewidth=0, zorder=-3)
+
+    axis_label_added = False
+    for line in artifacts.axis_linework:
+        x, y = line.xy
+        ax.plot(
+            x,
+            y,
+            color="#90a4ae",
+            linewidth=0.6,
+            linestyle="--",
+            alpha=0.65,
+            zorder=-1,
+            dash_capstyle="butt",
+            dash_joinstyle="miter",
+            label="reference axis" if not axis_label_added else None,
+        )
+        axis_label_added = True
+
+    wall_label_added = False
+    for line, _thickness in artifacts.wall_axes:
+        x, y = line.xy
+        ax.plot(
+            x,
+            y,
+            color="#cfd8dc",
+            linewidth=1.0,
+            zorder=1,
+            solid_capstyle="butt",
+            solid_joinstyle="miter",
+            label="skeleton wall" if not wall_label_added else None,
+        )
+        wall_label_added = True
+
+    shear_label_added = False
+    for wall in result.shear_walls:
+        x, y = wall.axis.xy
+        ax.plot(
+            x,
+            y,
+            color="#d32f2f",
+            linewidth=2.8,
+            zorder=5,
+            solid_capstyle="butt",
+            solid_joinstyle="miter",
+            label="shear wall" if not shear_label_added else None,
+        )
+        shear_label_added = True
+
+    beam_styles = {
+        BeamKind.PERIMETER: ("#1976d2", 2.2, "perimeter beam"),
+        BeamKind.COUPLING: ("#f57c00", 2.4, "coupling beam"),
+        BeamKind.SLAB_DIVIDER: ("#7b1fa2", 1.8, "slab divider"),
+    }
+    seen_beam_labels = set()
+    for beam in result.beams:
+        color, width, label = beam_styles.get(beam.kind, ("#455a64", 2.0, beam.kind.value))
+        x, y = beam.axis.xy
+        ax.plot(
+            x,
+            y,
+            color=color,
+            linewidth=width,
+            zorder=8,
+            solid_capstyle="butt",
+            solid_joinstyle="miter",
+            label=label if label not in seen_beam_labels else None,
+        )
+        seen_beam_labels.add(label)
+
+    ax.set_title("Structural Design")
+    ax.legend(loc="upper right")
+    save_and_maybe_show(fig, output_path, show=show)
+
+
+if __name__ == "__main__":
+    main()

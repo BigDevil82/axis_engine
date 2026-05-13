@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence
 
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
 from axis_engine.cad_processor import LayoutArtifacts
-from axis_engine.geometry_utils import iter_lines, iter_straight_segments
+from axis_engine.geometry_utils import iter_straight_segments
 from axis_engine.structural_design.models import Beam, BeamKind, ShearWall, StructuralDesignResult
 from axis_engine.structural_design.skeleton_spaces import (
     build_buffered_network,
@@ -19,7 +19,6 @@ from axis_engine.structural_design.skeleton_spaces import (
 @dataclass(frozen=True)
 class StructuralDesignOptions:
     buffer_distance: float = 150.0
-    perimeter_opening_distance_tolerance: float = 30.0
     coupling_const_tolerance: float = 10.0
     coupling_min_gap: float = 300.0
     coupling_max_gap: float = 5000.0
@@ -54,37 +53,52 @@ class StructuralDesigner:
             self.options.buffer_distance,
         )
         slab_regions = extract_slab_regions(buffered_network, self.options.buffer_distance)
+        exterior_shell = _exterior_shell_union(buffered_network)
         beams: list[Beam] = []
-        beams.extend(self._perimeter_beams(artifacts, buffered_network))
-        beams.extend(self._coupling_beams(shear_walls))
+        beams.extend(self._perimeter_beams_from_slab_footprint(slab_regions, buffered_network, shear_walls))
+        beams.extend(self._coupling_beams(shear_walls, exterior_shell))
         beams.extend(self._slab_divider_beams(slab_regions, shear_walls, beams))
+        beams = _dedupe_beams(beams)
         return StructuralDesignResult(shear_walls, beams, slab_regions, dominant_thickness)
 
-    def _perimeter_beams(self, artifacts: LayoutArtifacts, buffered_network) -> list[Beam]:
-        exterior_boundaries = [polygon.exterior for polygon in buffered_network_polygons(buffered_network)]
-        if not exterior_boundaries:
+    def _perimeter_beams_from_slab_footprint(
+        self,
+        slab_regions,
+        buffered_network,
+        shear_walls: Sequence[ShearWall],
+    ) -> list[Beam]:
+        """Use the merged slab footprint as perimeter beams.
+
+        Slab regions are recovered from the stable buffered-network holes, so
+        their union tends to remove small corner jitter from the raw skeleton.
+        The merged footprint therefore gives a cleaner closed outer contour than
+        tracing the buffered skeleton shell directly.
+        """
+        outer_contour = _slab_footprint_outer_contour(slab_regions)
+        if outer_contour.is_empty:
+            outer_contour = _outer_contour_centerline(buffered_network, self.options.buffer_distance)
+        if outer_contour.is_empty:
             return []
 
+        shear_wall_union = unary_union([wall.axis for wall in shear_walls if wall.axis.length > 0])
+        beam_geometry = outer_contour.difference(shear_wall_union)
         beams: list[Beam] = []
-        target_distance = self.options.buffer_distance
-        tolerance = self.options.perimeter_opening_distance_tolerance
-        for index, embedment in enumerate(artifacts.opening_embedments):
-            for line in iter_lines(embedment.embed_line):
-                if line.length < self.options.min_element_length:
-                    continue
-                if not _line_near_any_exterior(line, exterior_boundaries, target_distance, tolerance):
-                    continue
-                beams.append(
-                    Beam(
-                        axis=line,
-                        kind=BeamKind.PERIMETER,
-                        reason="opening_on_buffered_exterior",
-                        related_ids=(index,),
-                    )
+        seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
+        for line in iter_straight_segments(beam_geometry, self.options.min_element_length):
+            key = _line_key(line)
+            if key in seen:
+                continue
+            seen.add(key)
+            beams.append(
+                Beam(
+                    axis=line,
+                    kind=BeamKind.PERIMETER,
+                    reason="slab_footprint_outer_contour_minus_shear_wall",
                 )
+            )
         return beams
 
-    def _coupling_beams(self, shear_walls: Sequence[ShearWall]) -> list[Beam]:
+    def _coupling_beams(self, shear_walls: Sequence[ShearWall], exterior_shell) -> list[Beam]:
         features = [
             feature
             for index, wall in enumerate(shear_walls)
@@ -110,6 +124,8 @@ class StructuralDesigner:
                         line = LineString([(first.end, first.const), (second.start, first.const)])
                     else:
                         line = LineString([(first.const, first.end), (first.const, second.start)])
+                    if exterior_shell is not None and not exterior_shell.covers(line):
+                        continue
                     beams.append(
                         Beam(
                             axis=line,
@@ -154,13 +170,82 @@ def select_shear_walls(
     ]
 
 
-def _line_near_any_exterior(
-    line: LineString,
-    exterior_boundaries: Sequence[LineString],
-    target_distance: float,
-    tolerance: float,
-) -> bool:
-    return any(abs(line.distance(boundary) - target_distance) <= tolerance for boundary in exterior_boundaries)
+def _exterior_shell_union(buffered_network):
+    shells = [Polygon(polygon.exterior) for polygon in buffered_network_polygons(buffered_network)]
+    if not shells:
+        return None
+    return unary_union(shells)
+
+
+def _outer_contour_centerline(buffered_network, buffer_distance: float):
+    contours: list[LineString] = []
+    for polygon in buffered_network_polygons(buffered_network):
+        shell = Polygon(polygon.exterior)
+        recovered = shell.buffer(
+            -buffer_distance,
+            cap_style="square",
+            join_style="mitre",
+        )
+        for recovered_polygon in _iter_polygons(recovered):
+            if recovered_polygon.is_empty:
+                continue
+            contours.append(LineString(recovered_polygon.exterior.coords))
+    if not contours:
+        return LineString()
+    return unary_union(contours)
+
+
+def _slab_footprint_outer_contour(slab_regions):
+    footprint_parts = [
+        region.recovered_polygon
+        for region in slab_regions
+        if not region.recovered_polygon.is_empty
+    ]
+    if not footprint_parts:
+        return LineString()
+
+    footprint = unary_union(footprint_parts)
+    contours = [
+        LineString(polygon.exterior.coords)
+        for polygon in _iter_polygons(footprint)
+        if not polygon.is_empty
+    ]
+    if not contours:
+        return LineString()
+    return unary_union(contours)
+
+
+def _iter_polygons(geometry):
+    if isinstance(geometry, Polygon):
+        yield geometry
+        return
+    if hasattr(geometry, "geoms"):
+        for geom in geometry.geoms:
+            yield from _iter_polygons(geom)
+
+
+def _line_key(line: LineString, precision: int = 2) -> tuple[tuple[float, float], tuple[float, float]]:
+    start = tuple(round(value, precision) for value in line.coords[0])
+    end = tuple(round(value, precision) for value in line.coords[-1])
+    return tuple(sorted((start, end)))
+
+
+def _dedupe_beams(beams: Sequence[Beam]) -> list[Beam]:
+    priority = {
+        BeamKind.PERIMETER: 0,
+        BeamKind.COUPLING: 1,
+        BeamKind.SLAB_DIVIDER: 2,
+    }
+    selected: dict[tuple[tuple[float, float], tuple[float, float]], Beam] = {}
+    for beam in beams:
+        key = _line_key(beam.axis)
+        current = selected.get(key)
+        if current is None or priority[beam.kind] < priority[current.kind]:
+            selected[key] = beam
+    return sorted(
+        selected.values(),
+        key=lambda beam: (priority[beam.kind], _line_key(beam.axis)),
+    )
 
 
 def _axis_feature(line: LineString, source_index: int, axis_tolerance: float = 8.0) -> AxisFeature | None:

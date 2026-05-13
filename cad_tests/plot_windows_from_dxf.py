@@ -121,6 +121,8 @@ def plot_result(
             alpha=0.75,
             linestyle="--",
             zorder=0,
+            dash_capstyle="butt",
+            dash_joinstyle="miter",
             label="reference axis" if not axis_label_added else None,
         )
         axis_label_added = True
@@ -137,6 +139,8 @@ def plot_result(
             color="red" if is_primary else "#7e57c2",
             linewidth=2.0 if is_primary else 1.5,
             zorder=1 if is_primary else 2,
+            solid_capstyle="butt",
+            solid_joinstyle="miter",
             label=label if label not in wall_labels else None,
         )
         wall_labels.add(label)
@@ -193,7 +197,16 @@ def plot_result(
             seen_labels.add(embedment.opening_type)
         for line in iter_lines(embedment.embed_line):
             x, y = line.xy
-            ax.plot(x, y, color=color, linewidth=2.2, zorder=8, label=label)
+            ax.plot(
+                x,
+                y,
+                color=color,
+                linewidth=2.2,
+                zorder=8,
+                solid_capstyle="butt",
+                solid_joinstyle="miter",
+                label=label,
+            )
             label = None
 
     ax.set_title("Opening Clusters And Embedments")

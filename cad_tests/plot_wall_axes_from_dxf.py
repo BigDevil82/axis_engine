@@ -59,7 +59,16 @@ def plot_result(wall_linework, axes, output_path: Path, show: bool = False):
     fig, ax = create_axes((16, 10))
     for line in wall_linework:
         x, y = line.xy
-        ax.plot(x, y, color="#9aa0a6", linewidth=0.5, alpha=1, zorder=3)
+        ax.plot(
+            x,
+            y,
+            color="#9aa0a6",
+            linewidth=0.5,
+            alpha=1,
+            zorder=3,
+            solid_capstyle="butt",
+            solid_joinstyle="miter",
+        )
 
     primary_thickness = dominant_wall_thickness(axes)
     seen_labels = set()
@@ -73,6 +82,8 @@ def plot_result(wall_linework, axes, output_path: Path, show: bool = False):
             color="red" if is_primary else "#7e57c2",
             linewidth=1.8 if is_primary else 1.2,
             zorder=10,
+            solid_capstyle="butt",
+            solid_joinstyle="miter",
             label=label if label not in seen_labels else None,
         )
         seen_labels.add(label)

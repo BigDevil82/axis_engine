@@ -310,16 +310,25 @@ def _merge_axis_lines(
     merged_axes: list[tuple[LineString, float]] = []
     for thickness, lines in by_thickness.items():
         unified = unary_union(lines)
-        if isinstance(unified, LineString):
-            merged_axes.append((unified, thickness))
-            continue
         merged = linemerge(unary_union(lines))
         if isinstance(merged, LineString):
-            merged_axes.append((merged, thickness))
+            merged_axes.extend((segment, thickness) for segment in _straight_parts(merged))
         elif isinstance(merged, MultiLineString):
-            merged_axes.extend((line, thickness) for line in merged.geoms if line.length > 0)
+            for line in merged.geoms:
+                merged_axes.extend((segment, thickness) for segment in _straight_parts(line))
 
     return merged_axes
+
+
+def _straight_parts(line: LineString) -> list[LineString]:
+    """Split a merged axis polyline back into primitive straight axis segments."""
+    coords = list(line.coords)
+    parts: list[LineString] = []
+    for start, end in zip(coords, coords[1:]):
+        segment = LineString([start, end])
+        if segment.length > 0:
+            parts.append(segment)
+    return parts
 
 
 def _normalize_axis_line(line: LineString, thickness: float) -> tuple[LineString, float, str]:
