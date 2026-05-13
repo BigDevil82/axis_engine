@@ -27,6 +27,8 @@ class StructuralDesignOptions:
     coupling_const_tolerance: float = 10.0
     coupling_min_gap: float = 300.0
     coupling_max_gap: float = 5000.0
+    coupling_near_parallel_wall_distance: float = 600.0
+    coupling_near_parallel_wall_overlap_ratio: float = 0.30
     min_element_length: float = 1.0
     slab_division_options: SlabDivisionOptions = field(default_factory=SlabDivisionOptions)
 
@@ -54,6 +56,8 @@ class StructuralDesigner:
                 coupling_const_tolerance=self.options.coupling_const_tolerance,
                 coupling_min_gap=self.options.coupling_min_gap,
                 coupling_max_gap=self.options.coupling_max_gap,
+                coupling_near_parallel_wall_distance=self.options.coupling_near_parallel_wall_distance,
+                coupling_near_parallel_wall_overlap_ratio=self.options.coupling_near_parallel_wall_overlap_ratio,
                 min_element_length=self.options.min_element_length,
                 slab_division_options=SlabDivisionOptions(**self.options.slab_division_options),
             )
@@ -142,6 +146,16 @@ class StructuralDesigner:
                     else:
                         line = LineString([(first.const, first.end), (first.const, second.start)])
                     if exterior_shell is not None and not exterior_shell.covers(line):
+                        continue
+                    if _has_near_parallel_shear_wall(
+                        line,
+                        axis,
+                        first.source_index,
+                        second.source_index,
+                        features,
+                        self.options.coupling_near_parallel_wall_distance,
+                        self.options.coupling_near_parallel_wall_overlap_ratio,
+                    ):
                         continue
                     beams.append(
                         Beam(
@@ -305,3 +319,32 @@ def _group_collinear_features(
         else:
             target.append(feature)
     return groups
+
+
+def _has_near_parallel_shear_wall(
+    beam_line: LineString,
+    axis: str,
+    first_wall_index: int,
+    second_wall_index: int,
+    wall_features: Sequence[AxisFeature],
+    distance_tolerance: float,
+    overlap_ratio_threshold: float,
+) -> bool:
+    beam_feature = _axis_feature(beam_line, -1)
+    if beam_feature is None:
+        return False
+
+    for feature in wall_features:
+        if feature.axis != axis:
+            continue
+        if feature.source_index in {first_wall_index, second_wall_index}:
+            continue
+        if abs(feature.const - beam_feature.const) > distance_tolerance:
+            continue
+        overlap = min(feature.end, beam_feature.end) - max(feature.start, beam_feature.start)
+        if overlap <= 0:
+            continue
+        overlap_ratio = overlap / max(beam_feature.length, 1.0)
+        if overlap_ratio >= overlap_ratio_threshold:
+            return True
+    return False

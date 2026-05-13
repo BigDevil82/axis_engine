@@ -41,6 +41,12 @@ def parse_args():
     parser.add_argument(
         "--slab-min-area-ratio", type=float, default=0.25, help="分割后较小区域/较大区域的最小面积比。"
     )
+    parser.add_argument(
+        "--coupling-near-wall-distance",
+        type=float,
+        default=600.0,
+        help="连梁附近存在同方向剪力墙时跳过的距离阈值。",
+    )
     parser.add_argument("--write", action="store_true", help="生成结构布置后写入编辑图层，并展示写入结果。")
     parser.add_argument("--read", action="store_true", help="从编辑图层读取剪力墙和梁并展示。")
     parser.add_argument(
@@ -79,6 +85,7 @@ def main():
     )
     artifacts = processor.build_geometry()
     designer_options = StructuralDesignOptions(
+        coupling_near_parallel_wall_distance=args.coupling_near_wall_distance,
         slab_division_options=SlabDivisionOptions(
             max_edge_length=args.slab_max_edge,
             min_split_length=args.slab_min_split,
