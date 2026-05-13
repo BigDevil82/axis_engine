@@ -6,13 +6,11 @@ from typing import Sequence
 
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 
+from axis_engine.cad_input import open_cad_source
+from axis_engine.cad_input.layers import pick_axis_layers, pick_wall_layers
 from axis_engine.dxf_utils import (
     DxfGeometry,
     geometries_to_linework,
-    pick_dxf_axis_layers,
-    pick_dxf_wall_layers,
-    read_dxf,
-    read_dxf_geometries_from_layers,
 )
 from axis_engine.geometry_utils import iter_lines, iter_straight_segments
 from axis_engine.line_network_calibrator import NetworkSegment, SegmentType
@@ -77,12 +75,14 @@ class CADLayoutProcessor:
         embedment_options: dict | None = None,
         topology_calibration_options: dict | None = None,
         spur_prune_options: dict | None = None,
+        source_backend: str = "dxf",
         reference_axis_snap_tolerance: float = 100.0,
         core_axis_min_total_length: float = 5000.0,
         core_axis_group_tolerance: float = 80.0,
     ):
         self.source_path = Path(source_path)
-        if self.source_path.suffix.lower() != ".dxf":
+        self.source_backend = source_backend
+        if self.source_backend == "dxf" and self.source_path.suffix.lower() != ".dxf":
             raise ValueError("CADLayoutProcessor only supports DXF input.")
 
         self.wall_layers = list(set(wall_layers)) if wall_layers else None
@@ -117,15 +117,15 @@ class CADLayoutProcessor:
         self._geometry_built = False
 
     def build_geometry(self) -> LayoutArtifacts:
-        doc = read_dxf(self.source_path)
+        source = open_cad_source(self.source_backend, self.source_path if self.source_backend == "dxf" else None)
         self.components = _empty_components()
-        self._load_reference_axes(doc)
-        self._load_wall_geometries(doc)
+        self._load_reference_axes(source)
+        self._load_wall_geometries(source)
         self._extract_wall_axes()
         self._augment_reference_axes_from_core_walls()
         self._align_wall_axes_to_reference_axes()
         self._build_wall_polygon()
-        self._load_openings(doc)
+        self._load_openings(source)
         self._align_openings_to_reference_axes()
         self._calibrate_skeleton_topology()
         self._align_wall_axes_to_reference_axes()
@@ -190,14 +190,13 @@ class CADLayoutProcessor:
             raise RuntimeError("Room generation produced no valid rooms.")
         return self.rooms
 
-    def _load_reference_axes(self, doc):
-        self.axis_layers = pick_dxf_axis_layers(doc, self.axis_layers)
+    def _load_reference_axes(self, source):
+        self.axis_layers = pick_axis_layers(source.list_layer_names(), self.axis_layers)
         if not self.axis_layers:
             self.reference_axes = ReferenceAxisGrid()
             return
 
-        self.axis_geometries = read_dxf_geometries_from_layers(
-            doc,
+        self.axis_geometries = source.read_geometries_from_layers(
             self.axis_layers,
             visible_only=self.visible_only,
         )
@@ -205,10 +204,9 @@ class CADLayoutProcessor:
         self.reference_axes = ReferenceAxisGrid.from_lines(self.axis_linework)
         self.axis_linework = normalize_reference_axis_linework(self.axis_linework, self.reference_axes)
 
-    def _load_wall_geometries(self, doc):
-        self.wall_layers = pick_dxf_wall_layers(doc, self.wall_layers)
-        self.wall_geometries = read_dxf_geometries_from_layers(
-            doc,
+    def _load_wall_geometries(self, source):
+        self.wall_layers = pick_wall_layers(source.list_layer_names(), self.wall_layers)
+        self.wall_geometries = source.read_geometries_from_layers(
             self.wall_layers,
             visible_only=self.visible_only,
         )
@@ -266,12 +264,11 @@ class CADLayoutProcessor:
             wall_thicknesses=self.wall_thicknesses,
         )
 
-    def _load_openings(self, doc):
+    def _load_openings(self, source):
         if not self.opening_layers:
             return
 
-        self.opening_geometries = read_dxf_geometries_from_layers(
-            doc,
+        self.opening_geometries = source.read_geometries_from_layers(
             self.opening_layers,
             visible_only=self.visible_only,
         )

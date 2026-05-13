@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers")
+    parser.add_argument("--source-backend", choices=("dxf", "cad"), default="dxf", help="原始输入来源：dxf 读取 --dxf，cad 读取当前 AutoCAD 图形。")
     parser.add_argument("--write", action="store_true", help="生成结构布置后写入编辑图层，并展示写入结果。")
     parser.add_argument("--read", action="store_true", help="从编辑图层读取剪力墙和梁并展示。")
     parser.add_argument("--backend", choices=("dxf", "cad"), default="dxf", help="读写后端：dxf 操作 --dxf 文件，cad 操作当前 AutoCAD 图形。")
@@ -50,12 +51,13 @@ def main():
         print(f"输出图片: {args.output}")
         return
 
-    dxf_path = ensure_dxf_exists(args.dxf)
+    dxf_path = ensure_dxf_exists(args.dxf) if args.source_backend == "dxf" else Path(args.dxf)
     processor = CADLayoutProcessor(
         dxf_path,
         wall_layers=args.wall_layers,
         axis_layers=args.axis_layers,
         opening_layers=args.opening_layers,
+        source_backend=args.source_backend,
     )
     artifacts = processor.build_geometry()
     result = StructuralDesigner().design(artifacts)

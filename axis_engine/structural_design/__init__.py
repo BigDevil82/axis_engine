@@ -1,4 +1,3 @@
-from axis_engine.structural_design.designer import StructuralDesignOptions, StructuralDesigner
 from axis_engine.structural_design.models import (
     Beam,
     BeamKind,
@@ -16,3 +15,14 @@ __all__ = [
     "StructuralDesignResult",
     "StructuralDesigner",
 ]
+
+
+def __getattr__(name):
+    if name in {"StructuralDesignOptions", "StructuralDesigner"}:
+        from axis_engine.structural_design.designer import StructuralDesignOptions, StructuralDesigner
+
+        return {
+            "StructuralDesignOptions": StructuralDesignOptions,
+            "StructuralDesigner": StructuralDesigner,
+        }[name]
+    raise AttributeError(name)

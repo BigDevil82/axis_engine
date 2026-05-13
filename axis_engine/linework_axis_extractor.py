@@ -310,7 +310,11 @@ def _merge_axis_lines(
     merged_axes: list[tuple[LineString, float]] = []
     for thickness, lines in by_thickness.items():
         unified = unary_union(lines)
-        merged = linemerge(unary_union(lines))
+        if isinstance(unified, LineString):
+            merged_axes.extend((segment, thickness) for segment in _straight_parts(unified))
+            continue
+
+        merged = linemerge(unified)
         if isinstance(merged, LineString):
             merged_axes.extend((segment, thickness) for segment in _straight_parts(merged))
         elif isinstance(merged, MultiLineString):
