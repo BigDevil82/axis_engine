@@ -160,11 +160,11 @@ def _iter_entity_and_nested_virtuals(
     parent_layer: str | None = None,
     block_path: tuple[str, ...] = (),
 ):
-    if visible_only and not _is_entity_visible(entity, doc, in_block):
-        return
-
     own_layer = entity.dxf.layer
     effective_layer = parent_layer if (own_layer == "0" and parent_layer is not None) else own_layer
+    if visible_only and not _is_entity_visible(entity, doc, effective_layer):
+        return
+
     yield entity, transform, effective_layer, block_path
 
     if max_depth <= 0 or entity.dxftype() != "INSERT" or doc is None:
@@ -430,14 +430,11 @@ def _compose_transform(parent: Transform2D, child: Transform2D) -> Transform2D:
     )
 
 
-def _is_entity_visible(entity, doc, in_block: bool) -> bool:
+def _is_entity_visible(entity, doc, effective_layer: str) -> bool:
     if bool(entity.dxf.get("invisible", 0)):
         return False
 
-    layer_name = entity.dxf.layer
-    if in_block and layer_name == "0":
-        return True
-
+    layer_name = effective_layer
     if doc is None or layer_name not in doc.layers:
         return True
 

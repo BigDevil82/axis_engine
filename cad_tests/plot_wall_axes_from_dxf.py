@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers")
+    parser.add_argument("--include-hidden", action="store_true", help="包含关闭/冻结图层中的图元。默认只按 CAD 当前图层可见性读取。")
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
 
@@ -39,6 +40,7 @@ def main():
         wall_layers=args.wall_layers,
         axis_layers=args.axis_layers,
         opening_layers=args.opening_layers,
+        visible_only=not args.include_hidden,
     )
     artifacts = processor.build_geometry()
     thickness_counts = Counter(thickness for _line, thickness in artifacts.wall_axes)
