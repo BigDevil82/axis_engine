@@ -70,14 +70,14 @@ class StructuralDesigner:
             artifacts.opening_embedments,
             self.options.buffer_distance,
         )
-        slab_regions = extract_slab_regions(buffered_network, self.options.buffer_distance)
+        initial_slab_regions = extract_slab_regions(buffered_network, self.options.buffer_distance)
         exterior_shell = _exterior_shell_union(buffered_network)
         beams: list[Beam] = []
-        beams.extend(self._perimeter_beams_from_slab_footprint(slab_regions, buffered_network, shear_walls))
+        beams.extend(self._perimeter_beams_from_slab_footprint(initial_slab_regions, buffered_network, shear_walls))
         beams.extend(self._coupling_beams(shear_walls, exterior_shell))
         beams = _dedupe_beams(beams)
         slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
-        beams.extend(self._slab_divider_beams(artifacts, slab_regions, shear_walls, beams))
+        beams.extend(self._slab_divider_beams(artifacts, slab_regions, initial_slab_regions, shear_walls, beams))
         beams = _dedupe_beams(beams)
         slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
         return StructuralDesignResult(shear_walls, beams, slab_regions, dominant_thickness)
@@ -171,13 +171,17 @@ class StructuralDesigner:
         self,
         artifacts: LayoutArtifacts,
         slab_regions,
+        initial_slab_regions,
         shear_walls: Sequence[ShearWall],
         beams: Sequence[Beam],
     ) -> list[Beam]:
         return infer_slab_divider_beams(
             slab_regions,
+            initial_slab_regions,
+            shear_walls,
             beams,
             artifacts.axis_linework,
+            self.options.buffer_distance,
             self.options.slab_division_options,
         )
 

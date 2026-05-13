@@ -19,7 +19,10 @@ class SlabDivisionOptions:
     min_area_ratio: float = 0.25
     axis_snap_tolerance: float = 300.0
     edge_axis_tolerance: float = 8.0
-    max_divisions_per_region: int = 1
+    room_boundary_clearance: float = 80.0
+    min_room_boundary_length: float = 1200.0
+    irregular_area_factor: float = 0.65
+    max_axis_divisions_per_region: int = 2
 
 
 def slab_regions_from_structural_lines(
@@ -39,26 +42,168 @@ def slab_regions_from_structural_lines(
 
 def infer_slab_divider_beams(
     slab_regions: Sequence[SlabRegion],
+    initial_slab_regions: Sequence[SlabRegion],
+    shear_walls: Sequence[ShearWall],
     existing_beams: Sequence[Beam],
     axis_linework: Sequence[LineString],
+    buffer_distance: float,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
     axis_x, axis_y = _reference_axis_values(axis_linework)
-    existing_union = unary_union([beam.axis for beam in existing_beams if beam.axis.length > 0])
+    existing_lines = [wall.axis for wall in shear_walls if wall.axis.length > 0]
+    existing_lines.extend(beam.axis for beam in existing_beams if beam.axis.length > 0)
+    existing_union = unary_union(existing_lines)
+
+    divider_beams = _room_boundary_divider_beams(
+        slab_regions,
+        initial_slab_regions,
+        existing_union,
+        options,
+    )
+
+    if divider_beams:
+        all_beams = list(existing_beams) + divider_beams
+        slab_regions = slab_regions_from_structural_lines(shear_walls, all_beams, buffer_distance)
+        existing_union = unary_union(existing_lines + [beam.axis for beam in divider_beams if beam.axis.length > 0])
+
+    divider_beams.extend(
+        _axis_grid_divider_beams(
+            slab_regions,
+            axis_x,
+            axis_y,
+            existing_union,
+            options,
+        )
+    )
+    return divider_beams
+
+
+def _room_boundary_divider_beams(
+    slab_regions: Sequence[SlabRegion],
+    initial_slab_regions: Sequence[SlabRegion],
+    existing_union,
+    options: SlabDivisionOptions,
+) -> list[Beam]:
     divider_beams: list[Beam] = []
 
     for region_index, region in enumerate(slab_regions):
+        polygon = region.recovered_polygon
+        if not _needs_division(polygon, options):
+            continue
+        region_beams = _room_boundary_beams_for_region(
+            polygon,
+            initial_slab_regions,
+            region_index,
+            existing_union,
+            options,
+        )
+        divider_beams.extend(region_beams)
+
+    return divider_beams
+
+
+def _axis_grid_divider_beams(
+    slab_regions: Sequence[SlabRegion],
+    axis_x: Sequence[float],
+    axis_y: Sequence[float],
+    existing_union,
+    options: SlabDivisionOptions,
+) -> list[Beam]:
+    divider_beams: list[Beam] = []
+    for region_index, region in enumerate(slab_regions):
+        polygon = region.recovered_polygon
+        if not _needs_axis_grid_division(polygon, options):
+            continue
         region_beams = _divider_beams_for_region(
-            region.recovered_polygon,
+            polygon,
             region_index,
             axis_x,
             axis_y,
             existing_union,
             options,
         )
-        divider_beams.extend(region_beams[: options.max_divisions_per_region])
-
+        divider_beams.extend(region_beams[: options.max_axis_divisions_per_region])
     return divider_beams
+
+
+def _room_boundary_beams_for_region(
+    slab_polygon: Polygon,
+    initial_slab_regions: Sequence[SlabRegion],
+    region_index: int,
+    existing_union,
+    options: SlabDivisionOptions,
+) -> list[Beam]:
+    room_polygons: list[Polygon] = []
+    for room in initial_slab_regions:
+        if not _room_belongs_to_slab(room.recovered_polygon, slab_polygon):
+            continue
+        room_polygons.extend(
+            polygon
+            for polygon in _iter_polygons(room.recovered_polygon.intersection(slab_polygon))
+            if polygon.area > 1.0
+        )
+    if len(room_polygons) < 2:
+        return []
+
+    slab_edge = LineString(slab_polygon.exterior.coords).buffer(
+        options.room_boundary_clearance,
+        cap_style="square",
+        join_style="mitre",
+    )
+    room_edges = unary_union([LineString(room.exterior.coords) for room in room_polygons])
+    internal_edges = room_edges.difference(slab_edge)
+
+    beams: list[Beam] = []
+    seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
+    for line in iter_straight_segments(internal_edges, min_length=options.min_room_boundary_length):
+        if _covered_by_existing(line, existing_union):
+            continue
+        key = _line_key(line)
+        if key in seen:
+            continue
+        seen.add(key)
+        beams.append(
+            Beam(
+                axis=line,
+                kind=BeamKind.SLAB_DIVIDER,
+                reason="large_slab_room_boundary_split",
+                related_ids=(region_index,),
+            )
+        )
+    return beams
+
+
+def _room_belongs_to_slab(room_polygon: Polygon, slab_polygon: Polygon) -> bool:
+    if room_polygon.is_empty:
+        return False
+    point = room_polygon.representative_point()
+    if slab_polygon.buffer(1.0, cap_style="square", join_style="mitre").covers(point):
+        return True
+    overlap = room_polygon.intersection(slab_polygon).area
+    return overlap / max(room_polygon.area, 1.0) >= 0.50
+
+
+def _needs_division(polygon: Polygon, options: SlabDivisionOptions) -> bool:
+    if polygon.is_empty or polygon.area <= 0:
+        return False
+    if _max_axis_edge_length(polygon, options.edge_axis_tolerance) > options.max_edge_length:
+        return True
+    minx, miny, maxx, maxy = polygon.bounds
+    return max(maxx - minx, maxy - miny) > options.max_edge_length
+
+
+def _needs_axis_grid_division(polygon: Polygon, options: SlabDivisionOptions) -> bool:
+    if not _needs_division(polygon, options):
+        return False
+    minx, miny, maxx, maxy = polygon.bounds
+    bbox_area = max((maxx - minx) * (maxy - miny), 1.0)
+    fill_ratio = polygon.area / bbox_area
+    return fill_ratio < options.irregular_area_factor or polygon.area > options.max_edge_length**2
+
+
+def _max_axis_edge_length(polygon: Polygon, tolerance: float) -> float:
+    lengths = [edge.length for edge in _axis_aligned_edges(polygon, tolerance)]
+    return max(lengths, default=0.0)
 
 
 def _divider_beams_for_region(
@@ -238,3 +383,12 @@ def _line_key(line: LineString, precision: int = 2) -> tuple[tuple[float, float]
     start = tuple(round(value, precision) for value in line.coords[0])
     end = tuple(round(value, precision) for value in line.coords[-1])
     return tuple(sorted((start, end)))
+
+
+def _iter_polygons(geometry):
+    if isinstance(geometry, Polygon):
+        yield geometry
+        return
+    if hasattr(geometry, "geoms"):
+        for geom in geometry.geoms:
+            yield from _iter_polygons(geom)
