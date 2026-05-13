@@ -14,8 +14,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from axis_engine.cad_processor import CADLayoutProcessor
+from axis_engine.dxf_io import read_skeleton_axes, write_skeleton_axes
 from axis_engine.opening_clustering import cluster_bounds
-from axis_engine.opening_embedment import unmatched_opening_indices
+from axis_engine.opening_embedment import OpeningEmbedment, unmatched_opening_indices
 from axis_engine.geometry_utils import iter_lines
 from cad_tests.cli_common import (
     DEFAULT_DXF_PATH,
@@ -34,12 +35,35 @@ def parse_args():
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers", default=["WINDOW"])
+    parser.add_argument("--write", action="store_true", help="提取骨架后写入编辑图层，并展示写入结果。")
+    parser.add_argument("--read", action="store_true", help="从编辑图层读取骨架并展示。")
+    parser.add_argument("--backend", choices=("dxf", "cad"), default="dxf", help="读写后端：dxf 操作 --dxf 文件，cad 操作当前 AutoCAD 图形。")
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if args.write and args.read:
+        raise ValueError("--write 和 --read 不能同时使用。")
+
+    if args.read:
+        dxf_path = ensure_dxf_exists(args.dxf) if args.backend == "dxf" else None
+        data = read_skeleton_axes(backend=args.backend, path=dxf_path)
+        print_skeleton_summary(data.wall_axes, data.opening_lines)
+        plot_result(
+            [],
+            data.wall_axes,
+            [],
+            [],
+            data.opening_lines,
+            Path(args.output),
+            show=args.show,
+        )
+        print(f"从 {'当前 AutoCAD 图形' if args.backend == 'cad' else dxf_path} 读取编辑图层。")
+        print(f"输出图片: {args.output}")
+        return
+
     dxf_path = ensure_dxf_exists(args.dxf)
     processor = CADLayoutProcessor(
         dxf_path,
@@ -48,6 +72,57 @@ def main():
         opening_layers=args.opening_layers,
     )
     artifacts = processor.build_geometry()
+
+    if args.write:
+        if args.backend == "cad":
+            write_skeleton_axes(
+                artifacts.wall_axes,
+                artifacts.opening_embedments,
+                backend="cad",
+            )
+            print_skeleton_summary(artifacts.wall_axes, [item.embed_line for item in artifacts.opening_embedments])
+            print("已写入当前 AutoCAD 图形。")
+            plot_wall_axes = artifacts.wall_axes
+            plot_openings = artifacts.opening_embedments
+        else:
+            write_skeleton_axes(
+                artifacts.wall_axes,
+                artifacts.opening_embedments,
+                backend="dxf",
+                source_path=dxf_path,
+            )
+            data = read_skeleton_axes(backend="dxf", path=dxf_path)
+            print_skeleton_summary(data.wall_axes, data.opening_lines)
+            print(f"已写入 DXF 编辑图层: {dxf_path}")
+            plot_wall_axes = data.wall_axes
+            plot_openings = data.opening_lines
+        plot_result(
+            artifacts.axis_linework,
+            plot_wall_axes,
+            [],
+            [],
+            plot_openings,
+            Path(args.output),
+            show=args.show,
+        )
+        print(f"输出图片: {args.output}")
+        return
+
+    print_extraction_summary(args, artifacts)
+
+    plot_result(
+        artifacts.axis_linework,
+        artifacts.wall_axes,
+        artifacts.opening_geometries,
+        artifacts.opening_clusters,
+        artifacts.opening_embedments,
+        Path(args.output),
+        show=args.show,
+    )
+    print(f"输出图片: {args.output}")
+
+
+def print_extraction_summary(args, artifacts):
     thickness_lengths = {}
     for line, thickness in artifacts.wall_axes:
         thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
@@ -66,16 +141,19 @@ def main():
     print(f"门窗嵌入线: {len(artifacts.opening_embedments)}")
     print(f"未匹配门窗: {len(unmatched)}")
 
-    plot_result(
-        artifacts.axis_linework,
-        artifacts.wall_axes,
-        artifacts.opening_geometries,
-        artifacts.opening_clusters,
-        artifacts.opening_embedments,
-        Path(args.output),
-        show=args.show,
-    )
-    print(f"输出图片: {args.output}")
+
+def print_skeleton_summary(wall_axes, opening_lines):
+    thickness_lengths = {}
+    for line, thickness in wall_axes:
+        thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
+    if thickness_lengths:
+        summary = ", ".join(
+            f"{thick:g}: {length:.1f}"
+            for thick, length in sorted(thickness_lengths.items(), key=lambda x: x[1], reverse=True)
+        )
+        print(f"轴线墙厚长度分布: {summary}")
+    print(f"墙轴线: {len(wall_axes)}")
+    print(f"门窗嵌入线: {len(opening_lines)}")
 
 
 def plot_result(
@@ -190,12 +268,14 @@ def plot_result(
     color_map = {"door": "#00acc1", "window": "#43a047", "balcony": "#f57c00"}
     seen_labels = set()
     for embedment in opening_embedments:
-        color = color_map.get(embedment.opening_type, "#00acc1")
+        opening_type = embedment.opening_type if isinstance(embedment, OpeningEmbedment) else "opening"
+        color = color_map.get(opening_type, "#00acc1")
         label = None
-        if embedment.opening_type not in seen_labels:
-            label = f"{embedment.opening_type} embedment"
-            seen_labels.add(embedment.opening_type)
-        for line in iter_lines(embedment.embed_line):
+        if opening_type not in seen_labels:
+            label = f"{opening_type} embedment"
+            seen_labels.add(opening_type)
+        geometry = embedment.embed_line if isinstance(embedment, OpeningEmbedment) else embedment
+        for line in iter_lines(geometry):
             x, y = line.xy
             ax.plot(
                 x,
@@ -218,7 +298,8 @@ def plot_result(
 def build_buffered_network(wall_axes, opening_embedments, buffer_distance: float = 100.0):
     lines = [line for line, _thickness in wall_axes if line.length > 0]
     for embedment in opening_embedments:
-        lines.extend(line for line in iter_lines(embedment.embed_line) if line.length > 0)
+        geometry = embedment.embed_line if isinstance(embedment, OpeningEmbedment) else embedment
+        lines.extend(line for line in iter_lines(geometry) if line.length > 0)
 
     if not lines:
         return MultiLineString().buffer(0)

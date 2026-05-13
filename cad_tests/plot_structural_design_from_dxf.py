@@ -4,13 +4,16 @@ import argparse
 import sys
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from axis_engine.cad_processor import CADLayoutProcessor
+from axis_engine.dxf_io import read_design_axes, write_design_axes
 from axis_engine.structural_design import BeamKind, StructuralDesigner
+from axis_engine.structural_design.designer import dominant_wall_thickness
 from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
 from cad_tests.plot_common import create_axes, save_and_maybe_show
 
@@ -23,13 +26,30 @@ def parse_args():
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--axis-layer", action="append", dest="axis_layers")
-    parser.add_argument("--opening-layer", action="append", dest="opening_layers", default=["WINDOW"])
+    parser.add_argument("--opening-layer", action="append", dest="opening_layers")
+    parser.add_argument("--write", action="store_true", help="生成结构布置后写入编辑图层，并展示写入结果。")
+    parser.add_argument("--read", action="store_true", help="从编辑图层读取剪力墙和梁并展示。")
+    parser.add_argument("--backend", choices=("dxf", "cad"), default="dxf", help="读写后端：dxf 操作 --dxf 文件，cad 操作当前 AutoCAD 图形。")
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if args.write and args.read:
+        raise ValueError("--write 和 --read 不能同时使用。")
+
+    if args.read:
+        dxf_path = ensure_dxf_exists(args.dxf) if args.backend == "dxf" else None
+        data = read_design_axes(backend=args.backend, path=dxf_path)
+        result = design_result_from_dxf_data(data)
+        artifacts = empty_plot_artifacts()
+        print_design_summary(result)
+        plot_result(artifacts, result, Path(args.output), show=args.show)
+        print(f"从 {'当前 AutoCAD 图形' if args.backend == 'cad' else dxf_path} 读取编辑图层。")
+        print(f"输出图片: {args.output}")
+        return
+
     dxf_path = ensure_dxf_exists(args.dxf)
     processor = CADLayoutProcessor(
         dxf_path,
@@ -40,14 +60,48 @@ def main():
     artifacts = processor.build_geometry()
     result = StructuralDesigner().design(artifacts)
 
-    beam_counts = Counter(beam.kind.value for beam in result.beams)
-    print(f"主剪力墙墙厚: {result.dominant_wall_thickness}")
-    print(f"剪力墙: {len(result.shear_walls)}")
-    print(f"梁: {len(result.beams)} ({', '.join(f'{k}: {v}' for k, v in sorted(beam_counts.items()))})")
-    print(f"楼板空间: {len(result.slab_regions)}")
+    if args.write:
+        if args.backend == "cad":
+            write_design_axes(result, backend="cad")
+            print("已写入当前 AutoCAD 图形。")
+        else:
+            write_design_axes(result, backend="dxf", source_path=dxf_path)
+            data = read_design_axes(backend="dxf", path=dxf_path)
+            result = design_result_from_dxf_data(data, slab_regions=result.slab_regions)
+            print(f"已写入 DXF 编辑图层: {dxf_path}")
+        print_design_summary(result)
+        plot_result(artifacts, result, Path(args.output), show=args.show)
+        print(f"输出图片: {args.output}")
+        return
 
+    print_design_summary(result)
     plot_result(artifacts, result, Path(args.output), show=args.show)
     print(f"输出图片: {args.output}")
+
+
+def design_result_from_dxf_data(data, slab_regions=None):
+    beams = list(data.beams)
+    return SimpleNamespace(
+        shear_walls=data.shear_walls,
+        beams=beams,
+        slab_regions=list(slab_regions or []),
+        dominant_wall_thickness=dominant_wall_thickness(
+            [(wall.axis, wall.thickness) for wall in data.shear_walls]
+        ),
+    )
+
+
+def empty_plot_artifacts():
+    return SimpleNamespace(axis_linework=[], wall_axes=[])
+
+
+def print_design_summary(result):
+    beam_counts = Counter(beam.kind.value for beam in result.beams)
+    beam_summary = ", ".join(f"{k}: {v}" for k, v in sorted(beam_counts.items()))
+    print(f"主剪力墙墙厚: {result.dominant_wall_thickness}")
+    print(f"剪力墙: {len(result.shear_walls)}")
+    print(f"梁: {len(result.beams)} ({beam_summary})")
+    print(f"楼板空间: {len(result.slab_regions)}")
 
 
 def plot_result(artifacts, result, output_path: Path, show: bool = False):
