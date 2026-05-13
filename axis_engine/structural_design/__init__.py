@@ -5,12 +5,14 @@ from axis_engine.structural_design.models import (
     SlabRegion,
     StructuralDesignResult,
 )
+from axis_engine.structural_design.slab_division import SlabDivisionOptions
 
 __all__ = [
     "Beam",
     "BeamKind",
     "ShearWall",
     "SlabRegion",
+    "SlabDivisionOptions",
     "StructuralDesignOptions",
     "StructuralDesignResult",
     "StructuralDesigner",

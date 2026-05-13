@@ -13,7 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from axis_engine.cad_processor import CADLayoutProcessor
 from axis_engine.dxf_io import read_design_axes, write_design_axes
 from axis_engine.structural_design import BeamKind, StructuralDesigner
-from axis_engine.structural_design.designer import dominant_wall_thickness
+from axis_engine.structural_design.designer import StructuralDesignOptions, dominant_wall_thickness
+from axis_engine.structural_design.slab_division import SlabDivisionOptions
 from cad_tests.cli_common import DEFAULT_DXF_PATH, ensure_dxf_exists
 from cad_tests.plot_common import create_axes, save_and_maybe_show
 
@@ -27,10 +28,27 @@ def parse_args():
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers")
-    parser.add_argument("--source-backend", choices=("dxf", "cad"), default="dxf", help="原始输入来源：dxf 读取 --dxf，cad 读取当前 AutoCAD 图形。")
+    parser.add_argument(
+        "--source-backend",
+        choices=("dxf", "cad"),
+        default="dxf",
+        help="原始输入来源：dxf 读取 --dxf，cad 读取当前 AutoCAD 图形。",
+    )
+    parser.add_argument(
+        "--slab-max-edge", type=float, default=6000.0, help="楼板边长超过该值时尝试布置板内分割梁。"
+    )
+    parser.add_argument("--slab-min-split", type=float, default=1000.0, help="板内分割梁最小有效长度。")
+    parser.add_argument(
+        "--slab-min-area-ratio", type=float, default=0.25, help="分割后较小区域/较大区域的最小面积比。"
+    )
     parser.add_argument("--write", action="store_true", help="生成结构布置后写入编辑图层，并展示写入结果。")
     parser.add_argument("--read", action="store_true", help="从编辑图层读取剪力墙和梁并展示。")
-    parser.add_argument("--backend", choices=("dxf", "cad"), default="dxf", help="读写后端：dxf 操作 --dxf 文件，cad 操作当前 AutoCAD 图形。")
+    parser.add_argument(
+        "--backend",
+        choices=("dxf", "cad"),
+        default="dxf",
+        help="读写后端：dxf 操作 --dxf 文件，cad 操作当前 AutoCAD 图形。",
+    )
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
 
@@ -60,7 +78,14 @@ def main():
         source_backend=args.source_backend,
     )
     artifacts = processor.build_geometry()
-    result = StructuralDesigner().design(artifacts)
+    designer_options = StructuralDesignOptions(
+        slab_division_options=SlabDivisionOptions(
+            max_edge_length=args.slab_max_edge,
+            min_split_length=args.slab_min_split,
+            min_area_ratio=args.slab_min_area_ratio,
+        )
+    )
+    result = StructuralDesigner(designer_options).design(artifacts)
 
     if args.write:
         if args.backend == "cad":

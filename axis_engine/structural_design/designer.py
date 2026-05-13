@@ -9,6 +9,11 @@ from shapely.ops import unary_union
 from axis_engine.cad_processor import LayoutArtifacts
 from axis_engine.geometry_utils import iter_straight_segments
 from axis_engine.structural_design.models import Beam, BeamKind, ShearWall, StructuralDesignResult
+from axis_engine.structural_design.slab_division import (
+    SlabDivisionOptions,
+    infer_slab_divider_beams,
+    slab_regions_from_structural_lines,
+)
 from axis_engine.structural_design.skeleton_spaces import (
     build_buffered_network,
     buffered_network_polygons,
@@ -23,7 +28,7 @@ class StructuralDesignOptions:
     coupling_min_gap: float = 300.0
     coupling_max_gap: float = 5000.0
     min_element_length: float = 1.0
-    slab_division_options: dict = field(default_factory=dict)
+    slab_division_options: SlabDivisionOptions = field(default_factory=SlabDivisionOptions)
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,15 @@ class AxisFeature:
 class StructuralDesigner:
     def __init__(self, options: StructuralDesignOptions | None = None):
         self.options = options or StructuralDesignOptions()
+        if isinstance(self.options.slab_division_options, dict):
+            self.options = StructuralDesignOptions(
+                buffer_distance=self.options.buffer_distance,
+                coupling_const_tolerance=self.options.coupling_const_tolerance,
+                coupling_min_gap=self.options.coupling_min_gap,
+                coupling_max_gap=self.options.coupling_max_gap,
+                min_element_length=self.options.min_element_length,
+                slab_division_options=SlabDivisionOptions(**self.options.slab_division_options),
+            )
 
     def design(self, artifacts: LayoutArtifacts) -> StructuralDesignResult:
         dominant_thickness = dominant_wall_thickness(artifacts.wall_axes)
@@ -57,8 +71,11 @@ class StructuralDesigner:
         beams: list[Beam] = []
         beams.extend(self._perimeter_beams_from_slab_footprint(slab_regions, buffered_network, shear_walls))
         beams.extend(self._coupling_beams(shear_walls, exterior_shell))
-        beams.extend(self._slab_divider_beams(slab_regions, shear_walls, beams))
         beams = _dedupe_beams(beams)
+        slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
+        beams.extend(self._slab_divider_beams(artifacts, slab_regions, shear_walls, beams))
+        beams = _dedupe_beams(beams)
+        slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
         return StructuralDesignResult(shear_walls, beams, slab_regions, dominant_thickness)
 
     def _perimeter_beams_from_slab_footprint(
@@ -138,14 +155,17 @@ class StructuralDesigner:
 
     def _slab_divider_beams(
         self,
+        artifacts: LayoutArtifacts,
         slab_regions,
         shear_walls: Sequence[ShearWall],
         beams: Sequence[Beam],
     ) -> list[Beam]:
-        # Reserved for the next rule set. The slab regions are already available
-        # as recovered polygons, so future rules can split large regions along
-        # nearby walls, axes, or existing beam directions.
-        return []
+        return infer_slab_divider_beams(
+            slab_regions,
+            beams,
+            artifacts.axis_linework,
+            self.options.slab_division_options,
+        )
 
 
 def dominant_wall_thickness(wall_axes: Sequence[tuple[LineString, float]]) -> float | None:
