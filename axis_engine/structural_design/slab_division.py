@@ -23,6 +23,7 @@ class SlabDivisionOptions:
     min_room_boundary_length: float = 1200.0
     irregular_area_factor: float = 0.9
     rectangular_area_factor: float = 0.95
+    min_parallel_spacing: float = 1500.0
     max_axis_divisions_per_region: int = 2
 
 
@@ -60,6 +61,7 @@ def infer_slab_divider_beams(
         initial_slab_regions,
         axis_x,
         axis_y,
+        existing_lines,
         existing_union,
         options,
     )
@@ -67,8 +69,9 @@ def infer_slab_divider_beams(
     if divider_beams:
         all_beams = list(existing_beams) + divider_beams
         slab_regions = slab_regions_from_structural_lines(shear_walls, all_beams, buffer_distance)
+        existing_lines = existing_lines + [beam.axis for beam in divider_beams if beam.axis.length > 0]
         existing_union = unary_union(
-            existing_lines + [beam.axis for beam in divider_beams if beam.axis.length > 0]
+            existing_lines
         )
 
     divider_beams.extend(
@@ -76,6 +79,7 @@ def infer_slab_divider_beams(
             slab_regions,
             axis_x,
             axis_y,
+            existing_lines,
             existing_union,
             options,
         )
@@ -88,6 +92,7 @@ def _room_boundary_divider_beams(
     initial_slab_regions: Sequence[SlabRegion],
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    existing_lines: Sequence[LineString],
     existing_union,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
@@ -103,6 +108,7 @@ def _room_boundary_divider_beams(
             region_index,
             axis_x,
             axis_y,
+            existing_lines + [beam.axis for beam in divider_beams],
             existing_union,
             options,
         )
@@ -115,6 +121,7 @@ def _axis_grid_divider_beams(
     slab_regions: Sequence[SlabRegion],
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    existing_lines: Sequence[LineString],
     existing_union,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
@@ -128,6 +135,7 @@ def _axis_grid_divider_beams(
             region_index,
             axis_x,
             axis_y,
+            existing_lines + [beam.axis for beam in divider_beams],
             existing_union,
             options,
         )
@@ -141,6 +149,7 @@ def _room_boundary_beams_for_region(
     region_index: int,
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    existing_lines: Sequence[LineString],
     existing_union,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
@@ -168,6 +177,8 @@ def _room_boundary_beams_for_region(
     seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
     for line in iter_straight_segments(internal_edges, min_length=options.min_room_boundary_length):
         if not _on_reference_axis(line, axis_x, axis_y, options):
+            continue
+        if _too_close_to_parallel(line, existing_lines + [beam.axis for beam in beams], options):
             continue
         if _covered_by_existing(line, existing_union):
             continue
@@ -254,11 +265,51 @@ def _on_reference_axis(
     return any(abs(const - value) <= options.axis_snap_tolerance for value in values)
 
 
+def _too_close_to_parallel(
+    line: LineString,
+    reference_lines: Sequence[LineString],
+    options: SlabDivisionOptions,
+) -> bool:
+    feature = _line_feature(line, options.edge_axis_tolerance)
+    if feature is None:
+        return False
+
+    axis, const, start, end = feature
+    for ref_line in reference_lines:
+        for ref_segment in iter_straight_segments(ref_line):
+            ref_feature = _line_feature(ref_segment, options.edge_axis_tolerance)
+            if ref_feature is None or ref_feature[0] != axis:
+                continue
+            _ref_axis, ref_const, ref_start, ref_end = ref_feature
+            if abs(ref_const - const) >= options.min_parallel_spacing:
+                continue
+            overlap = min(end, ref_end) - max(start, ref_start)
+            if overlap >= options.min_split_length * 0.5:
+                return True
+    return False
+
+
+def _line_feature(
+    line: LineString,
+    tolerance: float,
+) -> tuple[str, float, float, float] | None:
+    direction = _edge_direction(line, tolerance)
+    if direction is None:
+        return None
+    start, end = line.coords[0], line.coords[-1]
+    if direction == "h":
+        x1, x2 = sorted((start[0], end[0]))
+        return "h", (start[1] + end[1]) / 2.0, x1, x2
+    y1, y2 = sorted((start[1], end[1]))
+    return "v", (start[0] + end[0]) / 2.0, y1, y2
+
+
 def _divider_beams_for_region(
     polygon: Polygon,
     region_index: int,
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    existing_lines: Sequence[LineString],
     existing_union,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
@@ -275,6 +326,7 @@ def _divider_beams_for_region(
             const,
             axis_x,
             axis_y,
+            existing_lines,
             existing_union,
             options,
         )
@@ -294,6 +346,7 @@ def _divider_beams_for_region(
                 const,
                 axis_x,
                 axis_y,
+                existing_lines,
                 existing_union,
                 options,
             )
@@ -304,6 +357,8 @@ def _divider_beams_for_region(
     for _score, line in candidates:
         key = _line_key(line)
         if key in seen:
+            continue
+        if _too_close_to_parallel(line, existing_lines + [beam.axis for beam in beams], options):
             continue
         seen.add(key)
         beams.append(
@@ -324,12 +379,15 @@ def _add_split_candidate(
     const: float,
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    existing_lines: Sequence[LineString],
     existing_union,
     options: SlabDivisionOptions,
 ) -> None:
     split_line = _through_polygon_line(polygon, direction, const)
     beam_line = _best_inside_segment(polygon, split_line, options.min_split_length)
     if beam_line is None or _covered_by_existing(beam_line, existing_union):
+        return
+    if _too_close_to_parallel(beam_line, existing_lines, options):
         return
     score = _split_score(polygon, split_line, beam_line, const, direction, axis_x, axis_y, options)
     if score < inf:
