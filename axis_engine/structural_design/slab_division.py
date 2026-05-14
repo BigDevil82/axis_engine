@@ -22,6 +22,7 @@ class SlabDivisionOptions:
     room_boundary_clearance: float = 80.0
     min_room_boundary_length: float = 1200.0
     irregular_area_factor: float = 0.9
+    rectangular_area_factor: float = 0.95
     max_axis_divisions_per_region: int = 2
 
 
@@ -57,6 +58,8 @@ def infer_slab_divider_beams(
     divider_beams = _room_boundary_divider_beams(
         slab_regions,
         initial_slab_regions,
+        axis_x,
+        axis_y,
         existing_union,
         options,
     )
@@ -83,6 +86,8 @@ def infer_slab_divider_beams(
 def _room_boundary_divider_beams(
     slab_regions: Sequence[SlabRegion],
     initial_slab_regions: Sequence[SlabRegion],
+    axis_x: Sequence[float],
+    axis_y: Sequence[float],
     existing_union,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
@@ -96,6 +101,8 @@ def _room_boundary_divider_beams(
             polygon,
             initial_slab_regions,
             region_index,
+            axis_x,
+            axis_y,
             existing_union,
             options,
         )
@@ -132,6 +139,8 @@ def _room_boundary_beams_for_region(
     slab_polygon: Polygon,
     initial_slab_regions: Sequence[SlabRegion],
     region_index: int,
+    axis_x: Sequence[float],
+    axis_y: Sequence[float],
     existing_union,
     options: SlabDivisionOptions,
 ) -> list[Beam]:
@@ -158,6 +167,8 @@ def _room_boundary_beams_for_region(
     beams: list[Beam] = []
     seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
     for line in iter_straight_segments(internal_edges, min_length=options.min_room_boundary_length):
+        if not _on_reference_axis(line, axis_x, axis_y, options):
+            continue
         if _covered_by_existing(line, existing_union):
             continue
         key = _line_key(line)
@@ -208,6 +219,41 @@ def _max_axis_edge_length(polygon: Polygon, tolerance: float) -> float:
     return max(lengths, default=0.0)
 
 
+def _is_regular_rectangular(polygon: Polygon, options: SlabDivisionOptions) -> bool:
+    if polygon.is_empty or polygon.area <= 0:
+        return False
+    minx, miny, maxx, maxy = polygon.bounds
+    bbox_area = max((maxx - minx) * (maxy - miny), 1.0)
+    if polygon.area / bbox_area < options.rectangular_area_factor:
+        return False
+
+    coords = list(polygon.exterior.coords)
+    return all(
+        _edge_direction(LineString([start, end]), options.edge_axis_tolerance) is not None
+        for start, end in zip(coords, coords[1:])
+        if LineString([start, end]).length > options.edge_axis_tolerance
+    )
+
+
+def _on_reference_axis(
+    line: LineString,
+    axis_x: Sequence[float],
+    axis_y: Sequence[float],
+    options: SlabDivisionOptions,
+) -> bool:
+    direction = _edge_direction(line, options.edge_axis_tolerance)
+    if direction is None:
+        return False
+    start, end = line.coords[0], line.coords[-1]
+    if direction == "h":
+        const = (start[1] + end[1]) / 2.0
+        values = axis_y
+    else:
+        const = (start[0] + end[0]) / 2.0
+        values = axis_x
+    return any(abs(const - value) <= options.axis_snap_tolerance for value in values)
+
+
 def _divider_beams_for_region(
     polygon: Polygon,
     region_index: int,
@@ -220,7 +266,8 @@ def _divider_beams_for_region(
         return []
 
     candidates: list[tuple[float, LineString]] = []
-    for direction, const in _region_grid_split_constants(polygon, axis_x, axis_y, options):
+    is_rectangular = _is_regular_rectangular(polygon, options)
+    for direction, const in _region_grid_split_constants(polygon, axis_x, axis_y, is_rectangular, options):
         _add_split_candidate(
             candidates,
             polygon,
@@ -239,7 +286,7 @@ def _divider_beams_for_region(
         if direction is None:
             continue
 
-        for const in _candidate_split_constants(edge, polygon, direction, axis_x, axis_y, options):
+        for const in _candidate_split_constants(edge, polygon, direction, axis_x, axis_y, is_rectangular, options):
             _add_split_candidate(
                 candidates,
                 polygon,
@@ -293,14 +340,19 @@ def _region_grid_split_constants(
     polygon: Polygon,
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    allow_midpoint: bool,
     options: SlabDivisionOptions,
 ) -> list[tuple[str, float]]:
     minx, miny, maxx, maxy = polygon.bounds
     candidates: list[tuple[str, float]] = []
     if maxx - minx > options.max_edge_length:
-        candidates.extend(("h", value) for value in _span_split_values(minx, maxx, axis_x, options))
+        candidates.extend(
+            ("h", value) for value in _span_split_values(minx, maxx, axis_x, allow_midpoint, options)
+        )
     if maxy - miny > options.max_edge_length:
-        candidates.extend(("v", value) for value in _span_split_values(miny, maxy, axis_y, options))
+        candidates.extend(
+            ("v", value) for value in _span_split_values(miny, maxy, axis_y, allow_midpoint, options)
+        )
     return candidates
 
 
@@ -308,6 +360,7 @@ def _span_split_values(
     start: float,
     end: float,
     axis_values: Sequence[float],
+    allow_midpoint: bool,
     options: SlabDivisionOptions,
 ) -> list[float]:
     margin = max(options.min_split_length * 0.25, 300.0)
@@ -323,9 +376,9 @@ def _span_split_values(
     values = []
     for target in targets:
         nearest_axis = min(axis_candidates, key=lambda value: abs(value - target), default=None)
-        if nearest_axis is not None and abs(nearest_axis - target) <= options.axis_snap_tolerance:
+        if nearest_axis is not None:
             values.append(nearest_axis)
-        else:
+        elif allow_midpoint:
             values.append(target)
     return _dedupe_values(values, options.axis_snap_tolerance * 0.25)
 
@@ -359,6 +412,7 @@ def _candidate_split_constants(
     edge_direction: str,
     axis_x: Sequence[float],
     axis_y: Sequence[float],
+    allow_midpoint: bool,
     options: SlabDivisionOptions,
 ) -> list[float]:
     coords = list(long_edge.coords)
@@ -366,15 +420,16 @@ def _candidate_split_constants(
     end = coords[-1]
     if edge_direction == "h":
         a, b = sorted((start[0], end[0]))
-        vertex_values = [point[0] for point in polygon.exterior.coords if a < point[0] < b]
         axis_values = [value for value in axis_x if a < value < b]
     else:
         a, b = sorted((start[1], end[1]))
-        vertex_values = [point[1] for point in polygon.exterior.coords if a < point[1] < b]
         axis_values = [value for value in axis_y if a < value < b]
 
     midpoint = (a + b) / 2.0
-    values = _dedupe_values(vertex_values + axis_values + [midpoint], options.axis_snap_tolerance * 0.25)
+    values = list(axis_values)
+    if allow_midpoint and not values:
+        values.append(midpoint)
+    values = _dedupe_values(values, options.axis_snap_tolerance * 0.25)
     margin = max(options.min_split_length * 0.25, 300.0)
     return [value for value in values if a + margin < value < b - margin]
 
