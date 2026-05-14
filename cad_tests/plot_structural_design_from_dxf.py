@@ -90,7 +90,7 @@ def main():
             max_edge_length=args.slab_max_edge,
             min_split_length=args.slab_min_split,
             min_area_ratio=args.slab_min_area_ratio,
-        )
+        ),
     )
     result = StructuralDesigner(designer_options).design(artifacts)
 
@@ -141,12 +141,16 @@ def print_design_summary(result):
 def plot_result(artifacts, result, output_path: Path, show: bool = False):
     fig, ax = create_axes((16, 10))
 
+    import random
+
     for region in result.slab_regions:
         polygon = region.recovered_polygon
         if polygon.is_empty:
             continue
         x, y = polygon.exterior.xy
-        ax.fill(x, y, color="#e8f5e9", alpha=0.35, linewidth=0, zorder=-3)
+        # use a random pastel color for each slab region
+        r, g, b = (random.uniform(0.4, 0.95) for _ in range(3))
+        ax.fill(x, y, color=(r, g, b), alpha=0.35, linewidth=0, zorder=-3)
 
     axis_label_added = False
     for line in artifacts.axis_linework:
