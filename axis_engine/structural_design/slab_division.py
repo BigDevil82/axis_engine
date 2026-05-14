@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import inf
+from math import ceil, inf
 from typing import Sequence
 
 from shapely.geometry import LineString, MultiLineString, Polygon
@@ -21,7 +21,7 @@ class SlabDivisionOptions:
     edge_axis_tolerance: float = 8.0
     room_boundary_clearance: float = 80.0
     min_room_boundary_length: float = 1200.0
-    irregular_area_factor: float = 0.65
+    irregular_area_factor: float = 0.9
     max_axis_divisions_per_region: int = 2
 
 
@@ -64,7 +64,9 @@ def infer_slab_divider_beams(
     if divider_beams:
         all_beams = list(existing_beams) + divider_beams
         slab_regions = slab_regions_from_structural_lines(shear_walls, all_beams, buffer_distance)
-        existing_union = unary_union(existing_lines + [beam.axis for beam in divider_beams if beam.axis.length > 0])
+        existing_union = unary_union(
+            existing_lines + [beam.axis for beam in divider_beams if beam.axis.length > 0]
+        )
 
     divider_beams.extend(
         _axis_grid_divider_beams(
@@ -218,6 +220,18 @@ def _divider_beams_for_region(
         return []
 
     candidates: list[tuple[float, LineString]] = []
+    for direction, const in _region_grid_split_constants(polygon, axis_x, axis_y, options):
+        _add_split_candidate(
+            candidates,
+            polygon,
+            direction,
+            const,
+            axis_x,
+            axis_y,
+            existing_union,
+            options,
+        )
+
     for edge in _axis_aligned_edges(polygon, options.edge_axis_tolerance):
         if edge.length <= options.max_edge_length:
             continue
@@ -226,13 +240,16 @@ def _divider_beams_for_region(
             continue
 
         for const in _candidate_split_constants(edge, polygon, direction, axis_x, axis_y, options):
-            split_line = _through_polygon_line(polygon, direction, const)
-            beam_line = _best_inside_segment(polygon, split_line, options.min_split_length)
-            if beam_line is None or _covered_by_existing(beam_line, existing_union):
-                continue
-            score = _split_score(polygon, split_line, beam_line, const, direction, axis_x, axis_y, options)
-            if score < inf:
-                candidates.append((score, beam_line))
+            _add_split_candidate(
+                candidates,
+                polygon,
+                direction,
+                const,
+                axis_x,
+                axis_y,
+                existing_union,
+                options,
+            )
 
     candidates.sort(key=lambda item: item[0])
     beams: list[Beam] = []
@@ -251,6 +268,66 @@ def _divider_beams_for_region(
             )
         )
     return beams
+
+
+def _add_split_candidate(
+    candidates: list[tuple[float, LineString]],
+    polygon: Polygon,
+    direction: str,
+    const: float,
+    axis_x: Sequence[float],
+    axis_y: Sequence[float],
+    existing_union,
+    options: SlabDivisionOptions,
+) -> None:
+    split_line = _through_polygon_line(polygon, direction, const)
+    beam_line = _best_inside_segment(polygon, split_line, options.min_split_length)
+    if beam_line is None or _covered_by_existing(beam_line, existing_union):
+        return
+    score = _split_score(polygon, split_line, beam_line, const, direction, axis_x, axis_y, options)
+    if score < inf:
+        candidates.append((score, beam_line))
+
+
+def _region_grid_split_constants(
+    polygon: Polygon,
+    axis_x: Sequence[float],
+    axis_y: Sequence[float],
+    options: SlabDivisionOptions,
+) -> list[tuple[str, float]]:
+    minx, miny, maxx, maxy = polygon.bounds
+    candidates: list[tuple[str, float]] = []
+    if maxx - minx > options.max_edge_length:
+        candidates.extend(("h", value) for value in _span_split_values(minx, maxx, axis_x, options))
+    if maxy - miny > options.max_edge_length:
+        candidates.extend(("v", value) for value in _span_split_values(miny, maxy, axis_y, options))
+    return candidates
+
+
+def _span_split_values(
+    start: float,
+    end: float,
+    axis_values: Sequence[float],
+    options: SlabDivisionOptions,
+) -> list[float]:
+    margin = max(options.min_split_length * 0.25, 300.0)
+    usable_start = start + margin
+    usable_end = end - margin
+    if usable_start >= usable_end:
+        return []
+
+    span = end - start
+    split_count = max(1, ceil(span / options.max_edge_length) - 1)
+    targets = [start + span * index / (split_count + 1) for index in range(1, split_count + 1)]
+    axis_candidates = [value for value in axis_values if usable_start < value < usable_end]
+    values = []
+    for target in targets:
+        nearest_axis = min(axis_candidates, key=lambda value: abs(value - target), default=None)
+        if nearest_axis is not None and abs(nearest_axis - target) <= options.axis_snap_tolerance:
+            values.append(nearest_axis)
+        else:
+            values.append(target)
+    return _dedupe_values(values, options.axis_snap_tolerance * 0.25)
 
 
 def _axis_aligned_edges(polygon: Polygon, tolerance: float) -> list[LineString]:
