@@ -6,6 +6,7 @@ from axis_engine.structural_design.models import (
     StructuralDesignResult,
 )
 from axis_engine.structural_design.slab_division import SlabDivisionOptions
+from axis_engine.structural_design.shear_wall_layout import ShearWallLayoutOptions
 
 __all__ = [
     "Beam",
@@ -13,6 +14,7 @@ __all__ = [
     "ShearWall",
     "SlabRegion",
     "SlabDivisionOptions",
+    "ShearWallLayoutOptions",
     "StructuralDesignOptions",
     "StructuralDesignResult",
     "StructuralDesigner",

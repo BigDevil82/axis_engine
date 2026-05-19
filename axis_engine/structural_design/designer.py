@@ -21,6 +21,11 @@ from axis_engine.structural_design.skeleton_spaces import (
     extract_slab_regions,
 )
 from axis_engine.structural_design.spur_pruner import prune_structural_spurs
+from axis_engine.structural_design.shear_wall_layout import (
+    ShearWallLayoutOptions,
+    dominant_wall_thickness,
+    select_shear_walls,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +43,7 @@ class StructuralDesignOptions:
     balcony_beam_edge_tolerance: float = 120.0
     balcony_beam_min_edge_length: float = 800.0
     balcony_beam_opening_overlap_ratio: float = 0.55
+    shear_wall_layout_options: ShearWallLayoutOptions = field(default_factory=ShearWallLayoutOptions)
     min_element_length: float = 1.0
     slab_division_options: SlabDivisionOptions = field(default_factory=SlabDivisionOptions)
 
@@ -74,13 +80,22 @@ class StructuralDesigner:
                 balcony_beam_edge_tolerance=self.options.balcony_beam_edge_tolerance,
                 balcony_beam_min_edge_length=self.options.balcony_beam_min_edge_length,
                 balcony_beam_opening_overlap_ratio=self.options.balcony_beam_opening_overlap_ratio,
+                shear_wall_layout_options=(
+                    ShearWallLayoutOptions(**self.options.shear_wall_layout_options)
+                    if isinstance(self.options.shear_wall_layout_options, dict)
+                    else self.options.shear_wall_layout_options
+                ),
                 min_element_length=self.options.min_element_length,
                 slab_division_options=SlabDivisionOptions(**self.options.slab_division_options),
             )
 
     def design(self, artifacts: LayoutArtifacts) -> StructuralDesignResult:
         dominant_thickness = dominant_wall_thickness(artifacts.wall_axes)
-        shear_walls = select_shear_walls(artifacts.wall_axes, dominant_thickness)
+        shear_walls = select_shear_walls(
+            artifacts.wall_axes,
+            dominant_thickness,
+            self.options.shear_wall_layout_options,
+        )
         buffered_network = build_buffered_network(
             artifacts.wall_axes,
             artifacts.opening_embedments,
@@ -227,28 +242,6 @@ class StructuralDesigner:
             self.options.buffer_distance,
             self.options.slab_division_options,
         )
-
-
-def dominant_wall_thickness(wall_axes: Sequence[tuple[LineString, float]]) -> float | None:
-    thickness_lengths: dict[float, float] = {}
-    for line, thickness in wall_axes:
-        thickness_lengths[thickness] = thickness_lengths.get(thickness, 0.0) + line.length
-    if not thickness_lengths:
-        return None
-    return max(thickness_lengths.items(), key=lambda item: item[1])[0]
-
-
-def select_shear_walls(
-    wall_axes: Sequence[tuple[LineString, float]],
-    dominant_thickness: float | None,
-) -> list[ShearWall]:
-    if dominant_thickness is None:
-        return []
-    return [
-        ShearWall(axis=line, thickness=thickness)
-        for line, thickness in wall_axes
-        if thickness == dominant_thickness and line.length > 0
-    ]
 
 
 def _exterior_shell_union(buffered_network):
