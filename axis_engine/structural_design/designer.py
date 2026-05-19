@@ -19,6 +19,7 @@ from axis_engine.structural_design.skeleton_spaces import (
     buffered_network_polygons,
     extract_slab_regions,
 )
+from axis_engine.structural_design.spur_pruner import prune_structural_spurs
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,10 @@ class StructuralDesignOptions:
     coupling_max_gap: float = 5000.0
     coupling_near_parallel_wall_distance: float = 600.0
     coupling_near_parallel_wall_overlap_ratio: float = 0.30
+    structural_spur_length: float = 300.0
+    structural_stitch_gap_distance: float = 300.0
+    structural_stitch_probe_width: float = 5.0
+    structural_stitch_min_beam_length: float = 400.0
     min_element_length: float = 1.0
     slab_division_options: SlabDivisionOptions = field(default_factory=SlabDivisionOptions)
 
@@ -58,6 +63,10 @@ class StructuralDesigner:
                 coupling_max_gap=self.options.coupling_max_gap,
                 coupling_near_parallel_wall_distance=self.options.coupling_near_parallel_wall_distance,
                 coupling_near_parallel_wall_overlap_ratio=self.options.coupling_near_parallel_wall_overlap_ratio,
+                structural_spur_length=self.options.structural_spur_length,
+                structural_stitch_gap_distance=self.options.structural_stitch_gap_distance,
+                structural_stitch_probe_width=self.options.structural_stitch_probe_width,
+                structural_stitch_min_beam_length=self.options.structural_stitch_min_beam_length,
                 min_element_length=self.options.min_element_length,
                 slab_division_options=SlabDivisionOptions(**self.options.slab_division_options),
             )
@@ -79,6 +88,17 @@ class StructuralDesigner:
         slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
         beams.extend(self._slab_divider_beams(artifacts, slab_regions, initial_slab_regions, shear_walls, beams))
         beams = _dedupe_beams(beams)
+        pruned = prune_structural_spurs(
+            shear_walls,
+            beams,
+            spur_length=self.options.structural_spur_length,
+            stitch_gap_distance=self.options.structural_stitch_gap_distance,
+            stitch_probe_width=self.options.structural_stitch_probe_width,
+            stitch_min_beam_length=self.options.structural_stitch_min_beam_length,
+            min_segment_length=self.options.min_element_length,
+        )
+        shear_walls = pruned.shear_walls
+        beams = _dedupe_beams(pruned.beams)
         slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
         return StructuralDesignResult(shear_walls, beams, slab_regions, dominant_thickness)
 
