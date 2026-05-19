@@ -209,7 +209,7 @@ def _restore_beams_by_kind(
         _line_union([wall.axis for wall in shear_walls])
     )
     clean_beams: list[Beam] = []
-    for kind in (BeamKind.PERIMETER, BeamKind.COUPLING, BeamKind.SLAB_DIVIDER):
+    for kind in (BeamKind.PERIMETER, BeamKind.BALCONY, BeamKind.COUPLING, BeamKind.SLAB_DIVIDER):
         if remaining.is_empty:
             break
         kind_sources = [source for source in beam_sources if source.kind == kind]

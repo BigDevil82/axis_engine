@@ -8,6 +8,7 @@ from shapely.ops import unary_union
 
 from axis_engine.cad_processor import LayoutArtifacts
 from axis_engine.geometry_utils import iter_straight_segments
+from axis_engine.structural_design.balcony_beams import infer_balcony_beams
 from axis_engine.structural_design.models import Beam, BeamKind, ShearWall, StructuralDesignResult
 from axis_engine.structural_design.slab_division import (
     SlabDivisionOptions,
@@ -34,6 +35,9 @@ class StructuralDesignOptions:
     structural_stitch_gap_distance: float = 300.0
     structural_stitch_probe_width: float = 5.0
     structural_stitch_min_beam_length: float = 400.0
+    balcony_beam_edge_tolerance: float = 120.0
+    balcony_beam_min_edge_length: float = 800.0
+    balcony_beam_opening_overlap_ratio: float = 0.55
     min_element_length: float = 1.0
     slab_division_options: SlabDivisionOptions = field(default_factory=SlabDivisionOptions)
 
@@ -67,6 +71,9 @@ class StructuralDesigner:
                 structural_stitch_gap_distance=self.options.structural_stitch_gap_distance,
                 structural_stitch_probe_width=self.options.structural_stitch_probe_width,
                 structural_stitch_min_beam_length=self.options.structural_stitch_min_beam_length,
+                balcony_beam_edge_tolerance=self.options.balcony_beam_edge_tolerance,
+                balcony_beam_min_edge_length=self.options.balcony_beam_min_edge_length,
+                balcony_beam_opening_overlap_ratio=self.options.balcony_beam_opening_overlap_ratio,
                 min_element_length=self.options.min_element_length,
                 slab_division_options=SlabDivisionOptions(**self.options.slab_division_options),
             )
@@ -83,6 +90,7 @@ class StructuralDesigner:
         exterior_shell = _exterior_shell_union(buffered_network)
         beams: list[Beam] = []
         beams.extend(self._perimeter_beams_from_slab_footprint(initial_slab_regions, buffered_network, shear_walls))
+        beams.extend(self._balcony_opening_beams(artifacts, initial_slab_regions, beams))
         beams.extend(self._coupling_beams(shear_walls, exterior_shell))
         beams = _dedupe_beams(beams)
         slab_regions = slab_regions_from_structural_lines(shear_walls, beams, self.options.buffer_distance)
@@ -186,6 +194,21 @@ class StructuralDesigner:
                         )
                     )
         return beams
+
+    def _balcony_opening_beams(
+        self,
+        artifacts: LayoutArtifacts,
+        initial_slab_regions,
+        existing_beams: Sequence[Beam],
+    ) -> list[Beam]:
+        return infer_balcony_beams(
+            initial_slab_regions,
+            artifacts.opening_embedments,
+            existing_beams,
+            edge_tolerance=self.options.balcony_beam_edge_tolerance,
+            min_edge_length=self.options.balcony_beam_min_edge_length,
+            min_opening_overlap_ratio=self.options.balcony_beam_opening_overlap_ratio,
+        )
 
     def _slab_divider_beams(
         self,
@@ -291,8 +314,9 @@ def _line_key(line: LineString, precision: int = 2) -> tuple[tuple[float, float]
 def _dedupe_beams(beams: Sequence[Beam]) -> list[Beam]:
     priority = {
         BeamKind.PERIMETER: 0,
-        BeamKind.COUPLING: 1,
-        BeamKind.SLAB_DIVIDER: 2,
+        BeamKind.BALCONY: 1,
+        BeamKind.COUPLING: 2,
+        BeamKind.SLAB_DIVIDER: 3,
     }
     selected: dict[tuple[tuple[float, float], tuple[float, float]], Beam] = {}
     for beam in beams:

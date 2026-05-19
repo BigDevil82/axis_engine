@@ -201,6 +201,7 @@ def plot_result(artifacts, result, output_path: Path, show: bool = False):
 
     beam_styles = {
         BeamKind.PERIMETER: ("#1976d2", 2.2, "perimeter beam"),
+        BeamKind.BALCONY: ("#00897b", 2.3, "balcony beam"),
         BeamKind.COUPLING: ("#f57c00", 2.4, "coupling beam"),
         BeamKind.SLAB_DIVIDER: ("#7b1fa2", 1.8, "slab divider"),
     }

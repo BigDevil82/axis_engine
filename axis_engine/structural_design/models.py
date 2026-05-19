@@ -8,6 +8,7 @@ from shapely.geometry import LineString, Polygon
 
 class BeamKind(str, Enum):
     PERIMETER = "perimeter"
+    BALCONY = "balcony"
     COUPLING = "coupling"
     SLAB_DIVIDER = "slab_divider"
 
