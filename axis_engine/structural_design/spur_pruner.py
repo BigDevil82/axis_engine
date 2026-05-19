@@ -182,30 +182,21 @@ def _stitch_dangling_beams(
     )
     tree = STRtree(structure_lines)
 
-    bridges: list[_BeamSource] = []
-    bridge_keys: set[tuple[tuple[float, float], tuple[float, float], BeamKind]] = set()
+    extended: list[_BeamSource] = []
     for edge in beam_edges:
-        if edge.line.length < min_beam_length:
-            continue
-        for endpoint, endpoint_key, other_point in (
-            (edge.start, edge.start_key, edge.end),
-            (edge.end, edge.end_key, edge.start),
-        ):
-            if degrees.get(endpoint_key, 0) != 1:
-                continue
-            probe = _extension_probe(endpoint, other_point, gap_distance)
-            if probe is None:
-                continue
-            bridge = _nearest_beam_bridge(edge, endpoint, probe, tree, structure_lines, gap_distance, probe_width)
-            if bridge is None or bridge.line.length < min_segment_length:
-                continue
-            key = _beam_source_key(bridge)
-            if key in bridge_keys:
-                continue
-            bridge_keys.add(key)
-            bridges.append(bridge)
+        extended.append(
+            _extend_dangling_beam(
+                edge,
+                degrees,
+                tree,
+                structure_lines,
+                gap_distance,
+                probe_width,
+                min_beam_length,
+            )
+        )
 
-    return list(beam_sources) + bridges
+    return extended
 
 
 def _restore_beams_by_kind(
@@ -257,7 +248,45 @@ def _extension_probe(
     return LineString([endpoint, (endpoint[0], endpoint[1] + direction * distance)])
 
 
-def _nearest_beam_bridge(
+def _extend_dangling_beam(
+    edge: _BeamSource,
+    degrees: dict[tuple[float, float], int],
+    tree: STRtree,
+    line_geoms: Sequence[LineString],
+    gap_distance: float,
+    probe_width: float,
+    min_beam_length: float,
+) -> _BeamSource:
+    if edge.line.length < min_beam_length:
+        return edge
+
+    start = edge.start
+    end = edge.end
+    for side in ("start", "end"):
+        if side == "start":
+            endpoint, endpoint_key, other_point = start, _node_key(start), end
+        else:
+            endpoint, endpoint_key, other_point = end, _node_key(end), start
+        if degrees.get(endpoint_key, 0) != 1:
+            continue
+
+        probe = _extension_probe(endpoint, other_point, gap_distance)
+        if probe is None:
+            continue
+        target = _nearest_extension_target(edge, endpoint, probe, tree, line_geoms, gap_distance, probe_width)
+        if target is None:
+            continue
+        if side == "start":
+            start = target
+        else:
+            end = target
+
+    if start == edge.start and end == edge.end:
+        return edge
+    return _BeamSource(LineString([start, end]), edge.kind, f"{edge.reason}|extended", edge.related_ids)
+
+
+def _nearest_extension_target(
     edge: _BeamSource,
     endpoint: tuple[float, float],
     probe: LineString,
@@ -265,7 +294,7 @@ def _nearest_beam_bridge(
     line_geoms: Sequence[LineString],
     gap_distance: float,
     probe_width: float,
-) -> _BeamSource | None:
+) -> tuple[float, float] | None:
     endpoint_point = Point(endpoint)
     best_point = None
     best_distance = float("inf")
@@ -287,12 +316,7 @@ def _nearest_beam_bridge(
 
     if best_point is None:
         return None
-    return _BeamSource(
-        LineString([endpoint, best_point]),
-        edge.kind,
-        f"{edge.reason}|gap_stitched",
-        edge.related_ids,
-    )
+    return best_point
 
 
 def _intersection_points(geometry) -> list[Point]:
