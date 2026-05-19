@@ -55,6 +55,12 @@ class DxfGeometry:
             points = self.params.get("points", ())
             return [LineString(points)] if len(points) >= 2 else []
 
+        if self.geom_type in {"POLYLINE", "LWPOLYLINE"}:
+            points = list(self.params.get("points", ()))
+            if self.params.get("closed") and points:
+                points.append(points[0])
+            return [LineString(points)] if len(points) >= 2 else []
+
         return []
 
     def representative_line(self, curve_tolerance: float = 20.0) -> LineString:
