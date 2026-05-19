@@ -161,7 +161,7 @@ def _restore_beam_sources(
 def _stitch_dangling_beams(
     shear_walls: Sequence[ShearWall],
     beam_sources: Sequence[_BeamSource],
-    gap_distance: float,
+    _gap_distance: float,
     probe_width: float,
     min_beam_length: float,
     min_segment_length: float,
@@ -176,6 +176,7 @@ def _stitch_dangling_beams(
 
     structure_lines = [wall.axis for wall in shear_walls]
     structure_lines.extend(beam.line for beam in beam_sources)
+    extension_distance = _extension_distance(structure_lines)
     degrees = _node_degrees(
         _GraphEdge(line, _node_key(line.coords[0]), _node_key(line.coords[-1]))
         for line in structure_lines
@@ -190,7 +191,7 @@ def _stitch_dangling_beams(
                 degrees,
                 tree,
                 structure_lines,
-                gap_distance,
+                extension_distance,
                 probe_width,
                 min_beam_length,
             )
@@ -248,12 +249,21 @@ def _extension_probe(
     return LineString([endpoint, (endpoint[0], endpoint[1] + direction * distance)])
 
 
+def _extension_distance(lines: Sequence[LineString]) -> float:
+    if not lines:
+        return 1.0
+    union = _line_union(lines)
+    minx, miny, maxx, maxy = union.bounds
+    span = max(maxx - minx, maxy - miny, 1.0)
+    return span * 2.0
+
+
 def _extend_dangling_beam(
     edge: _BeamSource,
     degrees: dict[tuple[float, float], int],
     tree: STRtree,
     line_geoms: Sequence[LineString],
-    gap_distance: float,
+    extension_distance: float,
     probe_width: float,
     min_beam_length: float,
 ) -> _BeamSource:
@@ -270,10 +280,10 @@ def _extend_dangling_beam(
         if degrees.get(endpoint_key, 0) != 1:
             continue
 
-        probe = _extension_probe(endpoint, other_point, gap_distance)
+        probe = _extension_probe(endpoint, other_point, extension_distance)
         if probe is None:
             continue
-        target = _nearest_extension_target(edge, endpoint, probe, tree, line_geoms, gap_distance, probe_width)
+        target = _nearest_extension_target(edge, endpoint, probe, tree, line_geoms, probe_width)
         if target is None:
             continue
         if side == "start":
@@ -292,7 +302,6 @@ def _nearest_extension_target(
     probe: LineString,
     tree: STRtree,
     line_geoms: Sequence[LineString],
-    gap_distance: float,
     probe_width: float,
 ) -> tuple[float, float] | None:
     endpoint_point = Point(endpoint)
@@ -308,7 +317,7 @@ def _nearest_extension_target(
         intersection = probe.intersection(candidate)
         for point in _intersection_points(intersection):
             distance = endpoint_point.distance(point)
-            if distance <= 1e-6 or distance > gap_distance:
+            if distance <= 1e-6:
                 continue
             if distance < best_distance:
                 best_distance = distance
