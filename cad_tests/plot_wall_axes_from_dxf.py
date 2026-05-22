@@ -27,7 +27,11 @@ def parse_args():
     parser.add_argument("--wall-layer", action="append", dest="wall_layers")
     parser.add_argument("--axis-layer", action="append", dest="axis_layers")
     parser.add_argument("--opening-layer", action="append", dest="opening_layers")
-    parser.add_argument("--include-hidden", action="store_true", help="包含关闭/冻结图层中的图元。默认只按 CAD 当前图层可见性读取。")
+    parser.add_argument(
+        "--include-hidden",
+        action="store_true",
+        help="包含关闭/冻结图层中的图元。默认只按 CAD 当前图层可见性读取。",
+    )
     parser.add_argument("--show", action="store_true")
     return parser.parse_args()
 
@@ -89,6 +93,10 @@ def plot_result(wall_linework, axes, output_path: Path, show: bool = False):
             label=label if label not in seen_labels else None,
         )
         seen_labels.add(label)
+    # plot nodes
+    # xs = [line.coords[0][0] for line, _ in axes] + [line.coords[-1][0] for line, _ in axes]
+    # ys = [line.coords[0][1] for line, _ in axes] + [line.coords[-1][1] for line, _ in axes]
+    # ax.scatter(xs, ys, color="blue", s=5, zorder=15, label="axis endpoints")
 
     ax.set_title("Wall Axis Extraction (DXF)")
     if seen_labels:
@@ -107,4 +115,3 @@ def dominant_wall_thickness(axes) -> float | None:
 
 if __name__ == "__main__":
     main()
-

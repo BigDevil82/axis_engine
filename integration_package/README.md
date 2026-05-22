@@ -13,7 +13,7 @@
 - [03_ui_wireframes.md](03_ui_wireframes.md)
 - [04_sample_case_storyboard.md](04_sample_case_storyboard.md)
 
-业务接口文档见 [../design_api/API.md](../design_api/API.md)。
+业务接口文档见 [./API.md](./API.md)。
 
 概念图素材见 `assets/`：
 
