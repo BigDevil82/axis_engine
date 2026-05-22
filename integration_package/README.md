@@ -14,3 +14,8 @@
 - [04_sample_case_storyboard.md](04_sample_case_storyboard.md)
 
 业务接口文档见 [../design_api/API.md](../design_api/API.md)。
+
+概念图素材见 `assets/`：
+
+- `cad-plugin-two-stage-ui-concept.png`：骨架检查和结构检查双阶段界面概念。
+- `cad-plugin-workflow-concept.png`：从图层输入到写回 CAD 的流程概念。
