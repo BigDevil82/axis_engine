@@ -11,11 +11,12 @@ from axis_engine.structural_design.models import Beam, BeamKind, ShearWall, Slab
 
 
 def geometry_from_payload(item: dict[str, Any]) -> DxfGeometry:
+    geom_type = str(item["geom_type"]).upper()
     return DxfGeometry(
-        geom_type=str(item["geom_type"]).upper(),
+        geom_type=geom_type,
         params=_tuplify_params(dict(item.get("params", {}))),
         layer=str(item.get("layer", "")),
-        source_type=str(item.get("source_type", item.get("geom_type", ""))).upper(),
+        source_type=geom_type,
         block_path=tuple(item.get("block_path", ())),
     )
 

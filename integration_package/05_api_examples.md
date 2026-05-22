@@ -35,7 +35,6 @@ CAD 图层图元
       "id": "cad_wall_001",
       "layer": "WALL",
       "geom_type": "LINE",
-      "source_type": "LINE",
       "params": {
         "start": [1000, 2000],
         "end": [5800, 2000]
@@ -47,7 +46,6 @@ CAD 图层图元
       "id": "cad_opening_001",
       "layer": "WINDOW",
       "geom_type": "ARC",
-      "source_type": "ARC",
       "params": {
         "center": [3200, 2000],
         "radius": 900,
@@ -63,7 +61,6 @@ CAD 图层图元
       "id": "cad_axis_001",
       "layer": "DOTE",
       "geom_type": "LINE",
-      "source_type": "LINE",
       "params": {
         "start": [1000, 0],
         "end": [1000, 8000]

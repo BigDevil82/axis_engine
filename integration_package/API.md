@@ -38,7 +38,6 @@
   "id": "optional_frontend_id",
   "layer": "WALL",
   "geom_type": "LINE",
-  "source_type": "LINE",
   "params": {
     "start": [0, 0],
     "end": [3000, 0]
