@@ -11,6 +11,14 @@
 
 所有接口接收普通 `dict`，返回普通 `dict`，可直接被 FastAPI、桌面程序、CAD 插件桥接层包装。
 
+## 参数策略
+
+当前对接阶段，UI/CAD 插件只需要传递几何数据和人工编辑后的构件数据，不需要传算法 `options`。
+
+- 业务后端使用默认参数运行提取、生成和校准流程。
+- 本文档中的请求示例以 UI 当前必须传递的字段为主。
+- `options` 仍由业务接口内部保留，后续如果需要开放少量工程参数，再设计明确的设置项和可公开参数列表。
+
 ## 交互流程
 
 1. CAD 插件读取墙体、门窗、轴网图层基础图元。
@@ -139,17 +147,7 @@
 {
   "wall_geometries": [],
   "opening_geometries": [],
-  "axis_geometries": [],
-  "options": {
-    "reference_axis_snap_tolerance": 100,
-    "buffer_distance": 150,
-    "wall_axis": {},
-    "opening_cluster": {},
-    "opening_embedment": {},
-    "topology_calibration": {},
-    "spur_prune": {},
-    "core_axis": {}
-  }
+  "axis_geometries": []
 }
 ```
 
@@ -185,13 +183,7 @@
 {
   "wall_axes": [],
   "opening_embedments": [],
-  "axis_lines": [],
-  "options": {
-    "reference_axis_snap_tolerance": 100,
-    "buffer_distance": 150,
-    "topology_calibration": {},
-    "spur_prune": {}
-  }
+  "axis_lines": []
 }
 ```
 
@@ -207,19 +199,7 @@
 {
   "wall_axes": [],
   "opening_embedments": [],
-  "axis_lines": [],
-  "options": {
-    "buffer_distance": 150,
-    "shear_wall_layout_options": {
-      "connection_tolerance": 20,
-      "collinear_tolerance": 20,
-      "long_wall_length": 6000,
-      "max_split_segment_length": 3000
-    },
-    "slab_division_options": {
-      "max_edge_length": 6000
-    }
-  }
+  "axis_lines": []
 }
 ```
 
@@ -250,16 +230,7 @@
 ```json
 {
   "shear_walls": [],
-  "beams": [],
-  "options": {
-    "buffer_distance": 150,
-    "structural_prune": {
-      "spur_length": 300,
-      "stitch_probe_width": 5,
-      "stitch_min_beam_length": 400,
-      "min_segment_length": 1
-    }
-  }
+  "beams": []
 }
 ```
 

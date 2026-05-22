@@ -1,10 +1,12 @@
 # 结构设计交互需求包
 
-本目录用于与 UI/CAD 插件开发团队对接。当前先整理前三部分：
+本目录用于与 UI/CAD 插件开发团队对接，当前包含：
 
 1. 业务概览和系统边界。
 2. 用户交互流程和关键页面线框。
 3. 真实案例演示模板。
+4. 接口格式示例。
+5. 样例图纸和结果图。
 
 建议阅读顺序：
 
@@ -12,6 +14,8 @@
 - [02_user_workflow.md](02_user_workflow.md)
 - [03_ui_wireframes.md](03_ui_wireframes.md)
 - [04_sample_case_storyboard.md](04_sample_case_storyboard.md)
+- [05_api_examples.md](05_api_examples.md)
+- [06_sample_cases](06_sample_cases)
 
 业务接口文档见 [./API.md](./API.md)。
 
