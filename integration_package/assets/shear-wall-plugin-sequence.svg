@@ -1,91 +1,140 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1180" viewBox="0 0 1600 1180">
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1600" viewBox="0 0 1900 1600">
   <defs>
     <style>
       .bg { fill: #0c1118; }
-      .lane { fill: #121a26; stroke: #34445a; stroke-width: 2; rx: 12; }
-      .head { fill: #344051; stroke: #44566e; stroke-width: 2; rx: 10; }
-      .title { fill: #f5f8fc; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 26px; font-weight: 600; }
-      .subtitle { fill: #c5cedb; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 18px; }
-      .text { fill: #eef3f9; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 19px; }
-      .small { fill: #c4cedb; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 16px; }
-      .step { fill: #eaf1f8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 17px; font-weight: 600; }
-      .arrow { stroke: #6ed7ff; stroke-width: 3; fill: none; marker-end: url(#arrow); }
-      .return { stroke: #ffd45a; stroke-width: 3; fill: none; marker-end: url(#arrowReturn); }
-      .local { stroke: #98a7ba; stroke-width: 2.5; fill: none; marker-end: url(#arrowLocal); }
-      .life { stroke: #506277; stroke-width: 2; stroke-dasharray: 8 8; }
-      .loop { fill: none; stroke: #7f91a8; stroke-width: 2; stroke-dasharray: 10 7; rx: 12; }
-      .note { fill: #162333; stroke: #4a617b; stroke-width: 2; rx: 10; }
-      .badge { fill: #243449; stroke: #5b748f; stroke-width: 1.5; rx: 14; }
-      .badgeText { fill: #dce6f2; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 15px; }
+      .head { fill: #344051; stroke: #52657d; stroke-width: 2; rx: 10; }
+      .stage { fill: #121b28; stroke: #41546b; stroke-width: 2; rx: 12; }
+      .stageActive { fill: #172537; stroke: #68b9ff; stroke-width: 2; rx: 12; }
+      .note { fill: #162333; stroke: #50677f; stroke-width: 2; rx: 10; }
+      .tag { fill: #26394f; stroke: #6382a0; stroke-width: 1.5; rx: 15; }
+      .loop { fill: none; stroke: #8ea1b8; stroke-width: 2.2; stroke-dasharray: 12 8; rx: 14; }
+      .title { fill: #f5f8fc; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 28px; font-weight: 600; }
+      .subtitle { fill: #c7d0dc; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 18px; }
+      .laneTitle { fill: #f5f8fc; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 26px; font-weight: 600; }
+      .text { fill: #eef3f9; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 20px; }
+      .small { fill: #c6d0dd; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 16px; }
+      .step { fill: #f2f7fd; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 18px; font-weight: 600; }
+      .stageTitle { fill: #f4f8fd; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 20px; font-weight: 600; }
+      .stageText { fill: #c8d3df; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 16px; }
+      .tagText { fill: #dce6f2; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 15px; }
+      .arrow { stroke: #62d6ff; stroke-width: 3.2; fill: none; marker-end: url(#arrow); }
+      .return { stroke: #ffd45a; stroke-width: 3.2; fill: none; marker-end: url(#arrowReturn); }
+      .local { stroke: #a5b5c9; stroke-width: 2.7; fill: none; marker-end: url(#arrowLocal); }
+      .life { stroke: #53677e; stroke-width: 2; stroke-dasharray: 9 9; }
+      .divider { stroke: #2d3c4f; stroke-width: 2; }
     </style>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0 0L10 5L0 10Z" fill="#6ed7ff"/>
+      <path d="M0 0L10 5L0 10Z" fill="#62d6ff"/>
     </marker>
     <marker id="arrowReturn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0L10 5L0 10Z" fill="#ffd45a"/>
     </marker>
     <marker id="arrowLocal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0 0L10 5L0 10Z" fill="#98a7ba"/>
+      <path d="M0 0L10 5L0 10Z" fill="#a5b5c9"/>
     </marker>
   </defs>
 
-  <rect width="1600" height="1180" class="bg"/>
-  <text x="60" y="60" class="title">剪力墙智能设计插件交互时序</text>
-  <text x="60" y="92" class="subtitle">左侧为 CAD 插件和工程师操作，右侧为业务后端和建模服务；骨架与结构两个阶段均允许迭代修正。</text>
+  <rect width="1900" height="1600" class="bg"/>
+  <text x="60" y="62" class="title">剪力墙智能设计插件交互时序</text>
+  <text x="60" y="96" class="subtitle">中间展示 CAD 插件与后端的请求返回；右侧按阶段说明目标、输入、输出和人工介入点。</text>
 
-  <rect x="90" y="125" width="530" height="92" class="head"/>
-  <text x="135" y="163" class="title">CAD 插件 / 工程师</text>
-  <text x="135" y="192" class="subtitle">选择范围、读取图元、绘制结果、人工修正</text>
+  <rect x="90" y="135" width="560" height="96" class="head"/>
+  <text x="130" y="174" class="laneTitle">CAD 插件 / 工程师</text>
+  <text x="130" y="205" class="subtitle">选择范围、读取图元、绘制结果、人工修正</text>
 
-  <rect x="980" y="125" width="530" height="92" class="head"/>
-  <text x="1025" y="163" class="title">业务后端 / 建模服务</text>
-  <text x="1025" y="192" class="subtitle">骨架提取、分区、结构设计、YJK 建模</text>
+  <rect x="910" y="135" width="560" height="96" class="head"/>
+  <text x="950" y="174" class="laneTitle">业务后端 / 建模服务</text>
+  <text x="950" y="205" class="subtitle">骨架提取、分区检查、结构设计、YJK 建模</text>
 
-  <line x1="355" y1="235" x2="355" y2="1090" class="life"/>
-  <line x1="1245" y1="235" x2="1245" y2="1090" class="life"/>
+  <line x1="370" y1="255" x2="370" y2="1500" class="life"/>
+  <line x1="1190" y1="255" x2="1190" y2="1500" class="life"/>
+  <line x1="1515" y1="128" x2="1515" y2="1510" class="divider"/>
 
-  <rect x="150" y="248" width="410" height="78" class="note"/>
-  <text x="176" y="278" class="step">1. 框选平面图</text>
-  <text x="176" y="306" class="small">设置墙体、门窗、轴线图层；可仅显示输入图层确认</text>
+  <text x="1550" y="156" class="laneTitle">阶段说明</text>
+  <text x="1550" y="185" class="subtitle">供 UI 和接口对接使用</text>
 
-  <path d="M355 350H1245" class="arrow"/>
-  <text x="525" y="337" class="text">2. extract_skeleton(raw_geometries)</text>
-  <rect x="580" y="361" width="260" height="30" class="badge"/>
-  <text x="604" y="382" class="badgeText">范围内墙体 / 门窗 / 轴线图元</text>
+  <rect x="145" y="280" width="450" height="86" class="note"/>
+  <text x="172" y="312" class="step">1. 框选平面图并设置输入图层</text>
+  <text x="172" y="342" class="small">选择墙体、门窗、轴线图层；可仅显示输入图层确认</text>
 
-  <path d="M1245 430H355" class="return"/>
-  <text x="525" y="416" class="text">3. 返回骨架结果</text>
-  <rect x="584" y="441" width="300" height="30" class="badge"/>
-  <text x="608" y="462" class="badgeText">墙轴线、门窗嵌入线、房间分区、诊断</text>
+  <rect x="1545" y="260" width="295" height="148" class="stageActive"/>
+  <text x="1570" y="294" class="stageTitle">阶段一：准备输入</text>
+  <text x="1570" y="326" class="stageText">在一个 DWG 中框选单个平面图。</text>
+  <text x="1570" y="354" class="stageText">选择墙体、门窗、轴线图层。</text>
+  <text x="1570" y="382" class="stageText">前端只向后端发送范围内图元。</text>
 
-  <rect x="125" y="486" width="495" height="215" class="loop"/>
-  <text x="148" y="518" class="step">骨架修正迭代</text>
-  <path d="M230 548C205 548 205 622 230 622H355" class="local"/>
-  <text x="248" y="574" class="small">4. 工程师在 CAD 中补线、删线、延长搭接</text>
-  <path d="M355 645H1245" class="arrow"/>
-  <text x="526" y="632" class="text">5. normalize_skeleton(edited_skeleton)</text>
-  <path d="M1245 690H355" class="return"/>
-  <text x="526" y="678" class="text">6. 返回更新后的房间分区和问题提示</text>
+  <path d="M370 420H1190" class="arrow"/>
+  <text x="592" y="406" class="text">2. 请求提取骨架</text>
+  <rect x="642" y="434" width="280" height="30" class="tag"/>
+  <text x="672" y="455" class="tagText">墙体 / 门窗 / 轴线原始图元</text>
 
-  <path d="M355 748H1245" class="arrow"/>
-  <text x="525" y="735" class="text">7. design_structure(final_skeleton)</text>
-  <rect x="615" y="759" width="250" height="30" class="badge"/>
-  <text x="638" y="780" class="badgeText">确认后的最终骨架</text>
+  <path d="M1190 515H370" class="return"/>
+  <text x="592" y="501" class="text">3. 返回骨架结果</text>
+  <rect x="613" y="529" width="340" height="30" class="tag"/>
+  <text x="641" y="550" class="tagText">墙轴线、门窗嵌入线、房间分区、诊断</text>
 
-  <path d="M1245 818H355" class="return"/>
-  <text x="525" y="805" class="text">8. 返回剪力墙、梁、楼板分区和未闭合提示</text>
+  <rect x="1545" y="438" width="295" height="160" class="stage"/>
+  <text x="1570" y="472" class="stageTitle">阶段二：自动提取骨架</text>
+  <text x="1570" y="504" class="stageText">后端把图元转换为单线骨架。</text>
+  <text x="1570" y="532" class="stageText">房间分区用于判断闭合质量。</text>
+  <text x="1570" y="560" class="stageText">前端绘制到新的结果图层。</text>
 
-  <rect x="125" y="858" width="495" height="182" class="loop"/>
-  <text x="148" y="890" class="step">结构修正迭代</text>
-  <path d="M230 920C205 920 205 974 230 974H355" class="local"/>
-  <text x="248" y="945" class="small">9. 工程师修正剪力墙和梁</text>
-  <path d="M355 985H1245" class="arrow"/>
-  <text x="526" y="973" class="text">10. normalize_structure(edited_structure)</text>
-  <path d="M1245 1030H355" class="return"/>
-  <text x="526" y="1018" class="text">11. 返回搭接闭合检查结果</text>
+  <rect x="120" y="610" width="565" height="250" class="loop"/>
+  <text x="150" y="646" class="step">骨架修正迭代</text>
+  <path d="M240 696C205 696 205 790 240 790H370" class="local"/>
+  <text x="270" y="725" class="small">4. 工程师在 CAD 中修正骨架结果图层</text>
+  <text x="270" y="755" class="small">补充、删除、移动、延长线段，使房间闭合</text>
+  <path d="M370 815H1190" class="arrow"/>
+  <text x="592" y="801" class="text">5. 提交骨架修正并重新分区</text>
+  <path d="M1190 880H370" class="return"/>
+  <text x="592" y="866" class="text">6. 返回更新后的房间分区和问题提示</text>
 
-  <path d="M355 1080H1245" class="arrow"/>
-  <text x="525" y="1067" class="text">12. generate_ydb(final_structure)</text>
-  <path d="M1245 1130H355" class="return"/>
-  <text x="525" y="1117" class="text">13. 返回 YDB 文件，前端下载或写回 CAD</text>
+  <rect x="1545" y="625" width="295" height="188" class="stage"/>
+  <text x="1570" y="659" class="stageTitle">阶段三：骨架人工校核</text>
+  <text x="1570" y="691" class="stageText">主要根据房间分区判断问题。</text>
+  <text x="1570" y="719" class="stageText">用户在 CAD 中直接修改结果线。</text>
+  <text x="1570" y="747" class="stageText">提交后只重算分区和诊断。</text>
+  <text x="1570" y="775" class="stageText">该阶段可重复多轮。</text>
+
+  <path d="M370 970H1190" class="arrow"/>
+  <text x="592" y="956" class="text">7. 确认骨架并请求生成结构</text>
+  <rect x="668" y="984" width="230" height="30" class="tag"/>
+  <text x="700" y="1005" class="tagText">确认后的最终骨架</text>
+
+  <path d="M1190 1060H370" class="return"/>
+  <text x="592" y="1046" class="text">8. 返回剪力墙、梁、楼板分区和未闭合提示</text>
+
+  <rect x="1545" y="842" width="295" height="160" class="stage"/>
+  <text x="1570" y="876" class="stageTitle">阶段四：生成结构布置</text>
+  <text x="1570" y="908" class="stageText">后端基于最终骨架布置剪力墙。</text>
+  <text x="1570" y="936" class="stageText">生成边梁、连梁、板划分梁。</text>
+  <text x="1570" y="964" class="stageText">同时返回未闭合位置提示。</text>
+
+  <rect x="120" y="1100" width="565" height="220" class="loop"/>
+  <text x="150" y="1136" class="step">结构修正迭代</text>
+  <path d="M240 1186C205 1186 205 1260 240 1260H370" class="local"/>
+  <text x="270" y="1215" class="small">9. 工程师在 CAD 中修正剪力墙和梁</text>
+  <text x="270" y="1245" class="small">处理未搭接、悬垂梁、缺梁或不合理构件</text>
+  <path d="M370 1285H1190" class="arrow"/>
+  <text x="592" y="1271" class="text">10. 提交结构修正并检查闭合搭接</text>
+  <path d="M1190 1350H370" class="return"/>
+  <text x="592" y="1336" class="text">11. 返回结构检查结果</text>
+
+  <rect x="1545" y="1032" width="295" height="188" class="stage"/>
+  <text x="1570" y="1066" class="stageTitle">阶段五：结构人工校核</text>
+  <text x="1570" y="1098" class="stageText">前端定位后端返回的问题点。</text>
+  <text x="1570" y="1126" class="stageText">用户直接修改结构结果图层。</text>
+  <text x="1570" y="1154" class="stageText">提交后检查构件是否闭合搭接。</text>
+  <text x="1570" y="1182" class="stageText">直到没有明显问题。</text>
+
+  <path d="M370 1430H1190" class="arrow"/>
+  <text x="592" y="1416" class="text">12. 请求生成 YJK 模型文件</text>
+  <path d="M1190 1495H370" class="return"/>
+  <text x="592" y="1481" class="text">13. 返回 YDB 文件，前端下载或写回 CAD</text>
+
+  <rect x="1545" y="1250" width="295" height="142" class="stage"/>
+  <text x="1570" y="1284" class="stageTitle">阶段六：输出成果</text>
+  <text x="1570" y="1316" class="stageText">调用 YJK 接口生成模型。</text>
+  <text x="1570" y="1344" class="stageText">返回 YDB 给前端下载。</text>
+  <text x="1570" y="1372" class="stageText">可同步写回 CAD 结果图层。</text>
 </svg>
