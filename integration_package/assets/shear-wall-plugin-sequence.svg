@@ -79,15 +79,12 @@
   <text x="1570" y="532" class="stageText">房间分区用于判断闭合质量。</text>
   <text x="1570" y="560" class="stageText">前端绘制到新的结果图层。</text>
 
-  <rect x="120" y="610" width="565" height="250" class="loop"/>
-  <text x="150" y="646" class="step">骨架修正迭代</text>
-  <path d="M240 696C205 696 205 790 240 790H370" class="local"/>
-  <text x="270" y="725" class="small">4. 工程师在 CAD 中修正骨架结果图层</text>
-  <text x="270" y="755" class="small">补充、删除、移动、延长线段，使房间闭合</text>
-  <path d="M370 815H1190" class="arrow"/>
-  <text x="592" y="801" class="text">5. 提交骨架修正并重新分区</text>
-  <path d="M1190 880H370" class="return"/>
-  <text x="592" y="866" class="text">6. 返回更新后的房间分区和问题提示</text>
+  <rect x="340" y="488" width="900" height="308" class="loop"/>
+  <text x="382" y="628" class="step">骨架修正迭代</text>
+  <text x="382" y="660" class="small">4. 工程师检查房间分区，并在 CAD 中修正骨架结果图层</text>
+  <text x="382" y="690" class="small">步骤 3 返回结果，修改后执行步骤 5；如仍有问题，继续回到步骤 3 检查</text>
+  <path d="M370 760H1190" class="arrow"/>
+  <text x="592" y="746" class="text">5. 提交骨架修正并重新分区</text>
 
   <rect x="1545" y="625" width="295" height="188" class="stage"/>
   <text x="1570" y="659" class="stageTitle">阶段三：骨架人工校核</text>
@@ -96,13 +93,13 @@
   <text x="1570" y="747" class="stageText">提交后只重算分区和诊断。</text>
   <text x="1570" y="775" class="stageText">该阶段可重复多轮。</text>
 
-  <path d="M370 970H1190" class="arrow"/>
-  <text x="592" y="956" class="text">7. 确认骨架并请求生成结构</text>
-  <rect x="668" y="984" width="230" height="30" class="tag"/>
-  <text x="700" y="1005" class="tagText">确认后的最终骨架</text>
+  <path d="M370 900H1190" class="arrow"/>
+  <text x="592" y="886" class="text">7. 确认骨架并请求生成结构</text>
+  <rect x="668" y="914" width="230" height="30" class="tag"/>
+  <text x="700" y="935" class="tagText">确认后的最终骨架</text>
 
-  <path d="M1190 1060H370" class="return"/>
-  <text x="592" y="1046" class="text">8. 返回剪力墙、梁、楼板分区和未闭合提示</text>
+  <path d="M1190 1010H370" class="return"/>
+  <text x="592" y="996" class="text">8. 返回剪力墙、梁、楼板分区和未闭合提示</text>
 
   <rect x="1545" y="842" width="295" height="160" class="stage"/>
   <text x="1570" y="876" class="stageTitle">阶段四：生成结构布置</text>
@@ -110,15 +107,12 @@
   <text x="1570" y="936" class="stageText">生成边梁、连梁、板划分梁。</text>
   <text x="1570" y="964" class="stageText">同时返回未闭合位置提示。</text>
 
-  <rect x="120" y="1100" width="565" height="220" class="loop"/>
-  <text x="150" y="1136" class="step">结构修正迭代</text>
-  <path d="M240 1186C205 1186 205 1260 240 1260H370" class="local"/>
-  <text x="270" y="1215" class="small">9. 工程师在 CAD 中修正剪力墙和梁</text>
-  <text x="270" y="1245" class="small">处理未搭接、悬垂梁、缺梁或不合理构件</text>
-  <path d="M370 1285H1190" class="arrow"/>
-  <text x="592" y="1271" class="text">10. 提交结构修正并检查闭合搭接</text>
-  <path d="M1190 1350H370" class="return"/>
-  <text x="592" y="1336" class="text">11. 返回结构检查结果</text>
+  <rect x="340" y="982" width="900" height="300" class="loop"/>
+  <text x="382" y="1094" class="step">结构修正迭代</text>
+  <text x="382" y="1126" class="small">9. 工程师根据问题提示修正剪力墙和梁</text>
+  <text x="382" y="1156" class="small">步骤 8 返回检查提示，修改后执行步骤 10；如仍有问题，继续回到步骤 8 检查</text>
+  <path d="M370 1235H1190" class="arrow"/>
+  <text x="592" y="1221" class="text">10. 提交结构修正并检查闭合搭接</text>
 
   <rect x="1545" y="1032" width="295" height="188" class="stage"/>
   <text x="1570" y="1066" class="stageTitle">阶段五：结构人工校核</text>
@@ -127,10 +121,10 @@
   <text x="1570" y="1154" class="stageText">提交后检查构件是否闭合搭接。</text>
   <text x="1570" y="1182" class="stageText">直到没有明显问题。</text>
 
-  <path d="M370 1430H1190" class="arrow"/>
-  <text x="592" y="1416" class="text">12. 请求生成 YJK 模型文件</text>
-  <path d="M1190 1495H370" class="return"/>
-  <text x="592" y="1481" class="text">13. 返回 YDB 文件，前端下载或写回 CAD</text>
+  <path d="M370 1390H1190" class="arrow"/>
+  <text x="592" y="1376" class="text">12. 请求生成 YJK 模型文件</text>
+  <path d="M1190 1460H370" class="return"/>
+  <text x="592" y="1446" class="text">13. 返回 YDB 文件，前端下载或写回 CAD</text>
 
   <rect x="1545" y="1250" width="295" height="142" class="stage"/>
   <text x="1570" y="1284" class="stageTitle">阶段六：输出成果</text>
