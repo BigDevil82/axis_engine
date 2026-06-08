@@ -16,6 +16,7 @@
 - [04_sample_case_storyboard.md](04_sample_case_storyboard.md)
 - [05_api_examples.md](05_api_examples.md)
 - [06_sample_cases](06_sample_cases)
+- [07_shear_wall_plugin_ui.md](07_shear_wall_plugin_ui.md)
 
 业务接口文档见 [./API.md](./API.md)。
 
@@ -23,3 +24,4 @@
 
 - `cad-plugin-two-stage-ui-concept.png`：骨架检查和结构检查双阶段界面概念。
 - `cad-plugin-workflow-concept.png`：从图层输入到写回 CAD 的流程概念。
+- `shear-wall-plugin-ui-workflow.svg`：剪力墙智能设计选项卡和完整流程参考图。

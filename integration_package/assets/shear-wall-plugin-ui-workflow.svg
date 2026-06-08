@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080">
+  <defs>
+    <style>
+      .bg { fill: #0c1118; }
+      .ribbon { fill: #344051; }
+      .group { fill: #2d3848; stroke: #222b38; stroke-width: 1; }
+      .button { fill: #3d4a5c; stroke: #566579; stroke-width: 1; rx: 6; }
+      .label { fill: #f3f6fb; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 20px; }
+      .small { fill: #d8dee8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 15px; }
+      .group-title { fill: #ffffff; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 17px; }
+      .panel-title { fill: #f5f7fb; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 22px; font-weight: 600; }
+      .panel-note { fill: #b8c2d2; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 16px; }
+      .grid { stroke: #263244; stroke-width: 1; }
+      .panel { fill: #0a0f16; stroke: #39475a; stroke-width: 2; rx: 10; }
+      .wall { fill: none; stroke: #f4e000; stroke-width: 5; stroke-linecap: square; stroke-linejoin: miter; }
+      .wall-thin { fill: none; stroke: #f4e000; stroke-width: 3; stroke-linecap: square; stroke-linejoin: miter; }
+      .open { fill: none; stroke: #00e5ff; stroke-width: 4; stroke-linecap: square; }
+      .skeleton { fill: none; stroke: #58d6ff; stroke-width: 4; stroke-linecap: square; }
+      .skeleton2 { fill: none; stroke: #ffffff; stroke-width: 2; stroke-dasharray: 8 7; opacity: .65; }
+      .shear { fill: none; stroke: #f02b2b; stroke-width: 9; stroke-linecap: butt; }
+      .beam { fill: none; stroke: #ffd21f; stroke-width: 6; stroke-linecap: butt; }
+      .room1 { fill: #5cc8ff; opacity: .22; }
+      .room2 { fill: #ffcc55; opacity: .24; }
+      .room3 { fill: #8be070; opacity: .22; }
+      .room4 { fill: #ee80ff; opacity: .22; }
+      .room5 { fill: #ff7a7a; opacity: .20; }
+      .callout { fill: #121b27; stroke: #90a4bd; stroke-width: 2; rx: 12; }
+      .call { fill: #e9f0f8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 15px; }
+      .icon { fill: none; stroke: #e7edf6; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" class="grid" fill="none"/>
+    </pattern>
+    <g id="miniIcon">
+      <rect x="0" y="0" width="18" height="18" rx="3" class="icon"/>
+      <path d="M4 10h10M9 4v10" class="icon"/>
+    </g>
+    <g id="planRaw">
+      <path class="wall" d="M20 85H70V35H128V55H182V30H240V85H305V35H362V85H420V150H365V220H300V170H240V235H178V170H128V220H70V150H20Z"/>
+      <path class="wall-thin" d="M128 55V120H182V85M240 85V170M305 85V150H365M70 85V150H128M178 170H240"/>
+      <path class="open" d="M70 35H118M182 30H220M305 35H348M365 85H410M300 220H350M70 220H120"/>
+      <path class="open" d="M70 150A35 35 0 0 0 35 115M128 120A35 35 0 0 0 93 85M240 85A35 35 0 0 1 275 120M365 150A35 35 0 0 1 330 185"/>
+    </g>
+    <g id="planSkeleton">
+      <path class="skeleton" d="M20 115H420M95 35V220M155 55V170M210 30V235M270 85V220M335 35V220"/>
+      <path class="skeleton2" d="M20 85H420M20 150H420M70 35H362M70 220H350"/>
+      <path class="open" d="M70 35H118M182 30H220M305 35H348M300 220H350"/>
+    </g>
+    <g id="planRooms">
+      <path class="room1" d="M22 86H95V149H22Z"/>
+      <path class="room2" d="M96 56H181V149H96Z"/>
+      <path class="room3" d="M182 31H239V169H182Z"/>
+      <path class="room4" d="M240 86H334V169H240Z"/>
+      <path class="room5" d="M335 86H419V149H335Z"/>
+      <path class="room1" d="M70 151H177V219H70Z"/>
+      <path class="room2" d="M240 171H349V219H240Z"/>
+      <use href="#planSkeleton"/>
+    </g>
+    <g id="planStructure">
+      <use href="#planSkeleton"/>
+      <path class="shear" d="M95 35V105M95 150V220M210 30V95M210 165V235M335 35V105M335 150V220M20 115H85M345 115H420"/>
+      <path class="beam" d="M85 115H155M155 115H210M210 115H270M270 115H345M20 85H420M70 220H350M20 150H420"/>
+    </g>
+  </defs>
+
+  <rect width="1800" height="1080" class="bg"/>
+  <rect y="0" width="1800" height="190" class="ribbon"/>
+
+  <g transform="translate(16,18)">
+    <g>
+      <rect width="230" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">选择墙体图层</text>
+      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">选择门窗图层</text>
+      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">选择轴网图层</text>
+      <use href="#miniIcon" x="16" y="126"/><text x="46" y="141" class="small">读取图元</text>
+      <text x="78" y="176" class="group-title">1. 输入设置</text>
+    </g>
+    <g transform="translate(240,0)">
+      <rect width="260" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">提取骨架</text>
+      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">校准骨架</text>
+      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">生成房间分区</text>
+      <use href="#miniIcon" x="16" y="126"/><text x="46" y="141" class="small">查看诊断</text>
+      <text x="92" y="176" class="group-title">2. 骨架提取</text>
+    </g>
+    <g transform="translate(510,0)">
+      <rect width="330" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">添加轴线</text>
+      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">删除轴线</text>
+      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">延长相交</text>
+      <use href="#miniIcon" x="172" y="18"/><text x="202" y="33" class="small">修剪毛刺</text>
+      <use href="#miniIcon" x="172" y="54"/><text x="202" y="69" class="small">添加洞口</text>
+      <use href="#miniIcon" x="172" y="90"/><text x="202" y="105" class="small">删除洞口</text>
+      <text x="128" y="176" class="group-title">3. 骨架编辑</text>
+    </g>
+    <g transform="translate(850,0)">
+      <rect width="285" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">生成剪力墙</text>
+      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">生成梁</text>
+      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">校准结构</text>
+      <use href="#miniIcon" x="16" y="126"/><text x="46" y="141" class="small">重新分区</text>
+      <text x="104" y="176" class="group-title">4. 结构生成</text>
+    </g>
+    <g transform="translate(1145,0)">
+      <rect width="330" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">添加剪力墙</text>
+      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">删除剪力墙</text>
+      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">添加梁</text>
+      <use href="#miniIcon" x="172" y="18"/><text x="202" y="33" class="small">删除梁</text>
+      <use href="#miniIcon" x="172" y="54"/><text x="202" y="69" class="small">延长梁</text>
+      <use href="#miniIcon" x="172" y="90"/><text x="202" y="105" class="small">修改梁类型</text>
+      <text x="128" y="176" class="group-title">5. 结构编辑</text>
+    </g>
+    <g transform="translate(1485,0)">
+      <rect width="280" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">保存骨架</text>
+      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">保存结构</text>
+      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">写回CAD</text>
+      <use href="#miniIcon" x="148" y="18"/><text x="178" y="33" class="small">导出报告</text>
+      <use href="#miniIcon" x="148" y="54"/><text x="178" y="69" class="small">插件信息</text>
+      <text x="98" y="176" class="group-title">6. 导出信息</text>
+    </g>
+  </g>
+
+  <rect x="0" y="190" width="1800" height="890" fill="url(#grid)"/>
+  <text x="38" y="232" class="label">剪力墙智能设计工作流参考</text>
+  <text x="38" y="258" class="panel-note">从建筑平面图到骨架、房间分区、结构布置与人工修正的完整交互示意</text>
+
+  <g transform="translate(38,288)">
+    <g>
+      <rect width="545" height="315" class="panel"/>
+      <text x="22" y="36" class="panel-title">1 建筑平面图</text>
+      <text x="22" y="62" class="panel-note">黄色墙体，青色门窗</text>
+      <g transform="translate(70,78) scale(1.05)"><use href="#planRaw"/></g>
+    </g>
+    <g transform="translate(585,0)">
+      <rect width="545" height="315" class="panel"/>
+      <text x="22" y="36" class="panel-title">2 骨架提取</text>
+      <text x="22" y="62" class="panel-note">墙体与门窗转换为单线骨架</text>
+      <g transform="translate(70,78) scale(1.05)"><use href="#planSkeleton"/></g>
+    </g>
+    <g transform="translate(1170,0)">
+      <rect width="545" height="315" class="panel"/>
+      <text x="22" y="36" class="panel-title">3 局部修正骨架</text>
+      <text x="22" y="62" class="panel-note">补全、删除、延长，确保线网相交闭合</text>
+      <g transform="translate(70,78) scale(1.05)"><use href="#planSkeleton"/></g>
+      <rect x="342" y="76" width="170" height="118" class="callout"/>
+      <text x="360" y="104" class="call">局部放大</text>
+      <text x="360" y="130" class="call">+ 补全线段</text>
+      <text x="360" y="156" class="call">- 删除线段</text>
+      <text x="360" y="182" class="call">↗ 延长相交</text>
+      <path class="skeleton" d="M375 220H500M438 188V270"/>
+      <path class="open" d="M440 220H505"/>
+    </g>
+  </g>
+
+  <g transform="translate(38,640)">
+    <g>
+      <rect width="545" height="315" class="panel"/>
+      <text x="22" y="36" class="panel-title">4 房间分区</text>
+      <text x="22" y="62" class="panel-note">不同颜色表示闭合房间/楼板区域</text>
+      <g transform="translate(70,78) scale(1.05)"><use href="#planRooms"/></g>
+    </g>
+    <g transform="translate(585,0)">
+      <rect width="545" height="315" class="panel"/>
+      <text x="22" y="36" class="panel-title">5 结构布置</text>
+      <text x="22" y="62" class="panel-note">红色剪力墙，黄色梁</text>
+      <g transform="translate(70,78) scale(1.05)"><use href="#planStructure"/></g>
+    </g>
+    <g transform="translate(1170,0)">
+      <rect width="545" height="315" class="panel"/>
+      <text x="22" y="36" class="panel-title">6 人工调整结构</text>
+      <text x="22" y="62" class="panel-note">工程师调整墙梁并重新校准</text>
+      <g transform="translate(70,78) scale(1.05)"><use href="#planStructure"/></g>
+      <rect x="338" y="76" width="180" height="122" class="callout"/>
+      <text x="356" y="104" class="call">局部放大</text>
+      <text x="356" y="130" class="call">缩短剪力墙</text>
+      <text x="356" y="156" class="call">补梁</text>
+      <text x="356" y="182" class="call">延长搭接</text>
+      <path class="shear" d="M375 230V178"/>
+      <path class="beam" d="M375 230H505M430 178H505"/>
+    </g>
+  </g>
+</svg>
