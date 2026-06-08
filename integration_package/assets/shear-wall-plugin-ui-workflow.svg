@@ -4,7 +4,6 @@
       .bg { fill: #0c1118; }
       .ribbon { fill: #344051; }
       .group { fill: #2d3848; stroke: #222b38; stroke-width: 1; }
-      .button { fill: #3d4a5c; stroke: #566579; stroke-width: 1; rx: 6; }
       .label { fill: #f3f6fb; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 20px; }
       .small { fill: #d8dee8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 15px; }
       .group-title { fill: #ffffff; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 17px; }
@@ -68,86 +67,78 @@
 
   <g transform="translate(16,18)">
     <g>
-      <rect width="230" height="154" class="group"/>
-      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">选择墙体图层</text>
-      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">选择门窗图层</text>
-      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">选择轴网图层</text>
-      <use href="#miniIcon" x="16" y="126"/><text x="46" y="141" class="small">读取图元</text>
-      <text x="78" y="166" class="group-title">1. 输入设置</text>
+      <rect width="210" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">框选平面图</text>
+      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">清除范围</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">查看范围</text>
+      <text x="72" y="166" class="group-title">1. 对象范围</text>
     </g>
-    <g transform="translate(240,0)">
-      <rect width="260" height="154" class="group"/>
-      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">提取骨架</text>
-      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">校准骨架</text>
-      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">生成房间分区</text>
-      <use href="#miniIcon" x="16" y="126"/><text x="46" y="141" class="small">查看诊断</text>
-      <text x="92" y="166" class="group-title">2. 骨架提取</text>
+    <g transform="translate(220,0)">
+      <rect width="250" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">设置图层</text>
+      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">仅显示输入图层</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">恢复全部图层</text>
+      <text x="92" y="166" class="group-title">2. 图层设置</text>
     </g>
-    <g transform="translate(510,0)">
+    <g transform="translate(480,0)">
+      <rect width="270" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">提取骨架</text>
+      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">提交骨架修正</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">确认骨架</text>
+      <text x="102" y="166" class="group-title">3. 骨架流程</text>
+    </g>
+    <g transform="translate(760,0)">
+      <rect width="270" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">生成结构</text>
+      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">提交结构修正</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">生成YDB</text>
+      <text x="102" y="166" class="group-title">4. 结构流程</text>
+    </g>
+    <g transform="translate(1040,0)">
       <rect width="330" height="154" class="group"/>
-      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">添加轴线</text>
-      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">删除轴线</text>
-      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">延长相交</text>
-      <use href="#miniIcon" x="172" y="18"/><text x="202" y="33" class="small">修剪毛刺</text>
-      <use href="#miniIcon" x="172" y="54"/><text x="202" y="69" class="small">添加洞口</text>
-      <use href="#miniIcon" x="172" y="90"/><text x="202" y="105" class="small">删除洞口</text>
-      <text x="128" y="166" class="group-title">3. 骨架编辑</text>
+      <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">显示骨架</text>
+      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">显示分区</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">显示结构</text>
+      <use href="#miniIcon" x="172" y="24"/><text x="202" y="39" class="small">定位问题</text>
+      <text x="128" y="166" class="group-title">5. 显示检查</text>
     </g>
-    <g transform="translate(850,0)">
-      <rect width="285" height="154" class="group"/>
-      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">生成剪力墙</text>
-      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">生成梁</text>
-      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">校准结构</text>
-      <use href="#miniIcon" x="16" y="126"/><text x="46" y="141" class="small">重新分区</text>
-      <text x="104" y="166" class="group-title">4. 结构生成</text>
-    </g>
-    <g transform="translate(1145,0)">
-      <rect width="330" height="154" class="group"/>
-      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">添加剪力墙</text>
-      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">删除剪力墙</text>
-      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">添加梁</text>
-      <use href="#miniIcon" x="172" y="18"/><text x="202" y="33" class="small">删除梁</text>
-      <use href="#miniIcon" x="172" y="54"/><text x="202" y="69" class="small">延长梁</text>
-      <use href="#miniIcon" x="172" y="90"/><text x="202" y="105" class="small">修改梁类型</text>
-      <text x="128" y="166" class="group-title">5. 结构编辑</text>
-    </g>
-    <g transform="translate(1485,0)">
-      <rect width="280" height="154" class="group"/>
-      <use href="#miniIcon" x="16" y="18"/><text x="46" y="33" class="small">保存骨架</text>
-      <use href="#miniIcon" x="16" y="54"/><text x="46" y="69" class="small">保存结构</text>
-      <use href="#miniIcon" x="16" y="90"/><text x="46" y="105" class="small">写回CAD</text>
-      <use href="#miniIcon" x="148" y="18"/><text x="178" y="33" class="small">导出报告</text>
-      <use href="#miniIcon" x="148" y="54"/><text x="178" y="69" class="small">插件信息</text>
-      <text x="98" y="166" class="group-title">6. 导出信息</text>
+    <g transform="translate(1380,0)">
+      <rect width="390" height="154" class="group"/>
+      <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">下载YDB</text>
+      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">写回CAD</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">导出报告</text>
+      <use href="#miniIcon" x="172" y="24"/><text x="202" y="39" class="small">插件信息</text>
+      <text x="158" y="166" class="group-title">6. 输出信息</text>
     </g>
   </g>
 
   <rect x="0" y="190" width="1800" height="890" fill="url(#grid)"/>
   <text x="38" y="232" class="label">剪力墙智能设计工作流参考</text>
-  <text x="38" y="258" class="panel-note">从建筑平面图到骨架、房间分区、结构布置与人工修正的完整交互示意</text>
+  <text x="38" y="258" class="panel-note">插件只负责业务节点；线段修改由 CAD 原生命令完成，修改后提交后端重新检查</text>
 
   <g transform="translate(38,288)">
     <g>
       <rect width="545" height="315" class="panel"/>
-      <text x="22" y="36" class="panel-title">1 建筑平面图</text>
-      <text x="22" y="62" class="panel-note">黄色墙体，青色门窗</text>
+      <text x="22" y="36" class="panel-title">1 框选平面图</text>
+      <text x="22" y="62" class="panel-note">在一个 DWG 中限定本次操作范围</text>
       <g transform="translate(48,62) scale(1.05)"><use href="#planRaw"/></g>
+      <rect x="50" y="70" width="438" height="250" fill="none" stroke="#ffffff" stroke-width="3" stroke-dasharray="12 8"/>
     </g>
     <g transform="translate(585,0)">
       <rect width="545" height="315" class="panel"/>
-      <text x="22" y="36" class="panel-title">2 骨架提取</text>
-      <text x="22" y="62" class="panel-note">墙体与门窗转换为单线骨架</text>
+      <text x="22" y="36" class="panel-title">2 提取骨架</text>
+      <text x="22" y="62" class="panel-note">前端读取图层图元并调用后端</text>
       <g transform="translate(48,62) scale(1.05)"><use href="#planSkeleton"/></g>
     </g>
     <g transform="translate(1170,0)">
       <rect width="545" height="315" class="panel"/>
-      <text x="22" y="36" class="panel-title">3 局部修正骨架</text>
-      <text x="22" y="62" class="panel-note">补全、删除、延长，确保线网相交闭合</text>
+      <text x="22" y="36" class="panel-title">3 骨架修正迭代</text>
+      <text x="22" y="62" class="panel-note">工程师修改结果图层，再提交重新分区</text>
       <g transform="translate(48,62) scale(1.05)"><use href="#planSkeleton"/></g>
       <rect x="318" y="64" width="170" height="92" class="callout"/>
-      <text x="336" y="92" class="call">+ 补全线段</text>
-      <text x="336" y="120" class="call">- 删除线段</text>
-      <text x="336" y="148" class="call">↗ 延长相交</text>
+      <text x="336" y="92" class="call">补全线段</text>
+      <text x="336" y="120" class="call">删除线段</text>
+      <text x="336" y="148" class="call">延长相交</text>
       <path class="skeleton" d="M351 204H476M414 172V254"/>
       <path class="open" d="M416 204H481"/>
     </g>
@@ -156,23 +147,23 @@
   <g transform="translate(38,640)">
     <g>
       <rect width="545" height="315" class="panel"/>
-      <text x="22" y="36" class="panel-title">4 房间分区</text>
-      <text x="22" y="62" class="panel-note">不同颜色表示闭合房间/楼板区域</text>
+      <text x="22" y="36" class="panel-title">4 房间分区检查</text>
+      <text x="22" y="62" class="panel-note">不同颜色表示闭合房间，辅助判断骨架质量</text>
       <g transform="translate(48,62) scale(1.05)"><use href="#planRooms"/></g>
     </g>
     <g transform="translate(585,0)">
       <rect width="545" height="315" class="panel"/>
       <text x="22" y="36" class="panel-title">5 结构布置</text>
-      <text x="22" y="62" class="panel-note">红色剪力墙，黄色梁</text>
+      <text x="22" y="62" class="panel-note">红色剪力墙，黄色梁，并提示未闭合位置</text>
       <g transform="translate(48,62) scale(1.05)"><use href="#planStructure"/></g>
     </g>
     <g transform="translate(1170,0)">
       <rect width="545" height="315" class="panel"/>
-      <text x="22" y="36" class="panel-title">6 人工调整结构</text>
-      <text x="22" y="62" class="panel-note">工程师调整墙梁并重新校准</text>
+      <text x="22" y="36" class="panel-title">6 结构修正与输出</text>
+      <text x="22" y="62" class="panel-note">提交修正，检查通过后生成 YDB</text>
       <g transform="translate(48,62) scale(1.05)"><use href="#planStructure"/></g>
       <rect x="314" y="64" width="180" height="92" class="callout"/>
-      <text x="332" y="92" class="call">缩短剪力墙</text>
+      <text x="332" y="92" class="call">修正剪力墙</text>
       <text x="332" y="120" class="call">补梁</text>
       <text x="332" y="148" class="call">延长搭接</text>
       <path class="shear" d="M351 214V162"/>
