@@ -105,8 +105,8 @@
     <g transform="translate(1380,0)">
       <rect width="390" height="154" class="group"/>
       <use href="#miniIcon" x="16" y="24"/><text x="46" y="39" class="small">下载YDB</text>
-      <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">写回CAD</text>
-      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">导出报告</text>
+      <!-- <use href="#miniIcon" x="16" y="66"/><text x="46" y="81" class="small">写回CAD</text>
+      <use href="#miniIcon" x="16" y="108"/><text x="46" y="123" class="small">导出报告</text> -->
       <use href="#miniIcon" x="172" y="24"/><text x="202" y="39" class="small">插件信息</text>
       <text x="158" y="166" class="group-title">6. 输出信息</text>
     </g>
