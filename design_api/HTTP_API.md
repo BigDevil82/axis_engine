@@ -52,6 +52,6 @@ Invalid JSON fields are returned as HTTP `422`. Valid requests that cannot be pr
 | 安装依赖包路径 | `<项目路径>/requirements.txt` |
 | 启动命令 | `python -m gunicorn --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 127.0.0.1:10187 --timeout 300 design_api.web.app:app` |
 
-宝塔 Python 环境应先安装 `requirements.txt` 中的依赖。不要使用 Python 3.10，因为项目要求 Python 3.12 以上。Gunicorn 仅适用于 Linux；本地 Windows 调试继续使用 `uv run python -m design_api.web.server`。
+宝塔 Python 环境应先安装 `requirements.txt` 中的依赖。该文件只包含宝塔兼容的顶层依赖，每行均为 `包名==版本号`，不包含 Windows 专用的 `pywin32`。不要使用 Python 3.10，因为项目要求 Python 3.12 以上。Gunicorn 仅适用于 Linux；本地 Windows 调试继续使用 `uv run python -m design_api.web.server`。
 
 推荐通过宝塔的网站反向代理对外提供服务：上游地址填写 `http://127.0.0.1:10187`，域名通过 HTTPS 访问 `<域名>/docs` 和 `<域名>/api/v1/...`。服务当前没有身份认证，不应直接把 `10187` 暴露到公网；如 CAD 插件必须直连，则仅在受控内网开放该端口。
