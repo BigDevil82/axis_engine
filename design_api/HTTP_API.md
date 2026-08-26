@@ -5,10 +5,10 @@
 ## Start the service
 
 ```powershell
-uv run python -m design_api.web.server --host 0.0.0.0 --port 8000
+uv run python -m design_api.web.server --host 0.0.0.0 --port 10187
 ```
 
-For development, append `--reload`. The interactive OpenAPI document is available at `http://<server>:8000/docs`, and the machine-readable schema is at `/openapi.json`.
+For development, append `--reload`. The interactive OpenAPI document is available at `http://<server>:10187/docs`, and the machine-readable schema is at `/openapi.json`.
 
 ## Endpoints
 
@@ -32,7 +32,7 @@ $body = @{
 
 Invoke-RestMethod `
   -Method Post `
-  -Uri http://127.0.0.1:8000/api/v1/structure/normalize `
+  -Uri http://127.0.0.1:10187/api/v1/structure/normalize `
   -ContentType application/json `
   -Body $body
 ```
