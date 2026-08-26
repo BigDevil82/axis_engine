@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ezdxf>=1.4.3",
+    "fastapi>=0.141.1",
     "matplotlib>=3.10.9",
     "networkx>=3.6.1",
     "pywin32>=311",
     "shapely>=2.1.2",
+    "uvicorn[standard]>=0.52.4",
 ]
