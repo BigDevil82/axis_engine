@@ -443,9 +443,18 @@ def _endpoint_supported_by_leaf(
             line = geometry.representative_line()
             if line.length <= 1.0:
                 continue
-            if line.distance(chord) <= tolerance:
-                overlap_hint = min(line.distance(Point(center)), line.distance(Point(endpoint)))
-                support += max(0.0, tolerance - overlap_hint) + min(line.length, chord.length)
+            coords = list(line.coords)
+            if len(coords) < 2:
+                continue
+
+            near = min(coords, key=lambda point: Point(point).distance(Point(center)))
+            far = max(coords, key=lambda point: Point(point).distance(Point(center)))
+            if Point(near).distance(Point(center)) > tolerance:
+                continue
+            if Point(far).distance(Point(endpoint)) > tolerance:
+                continue
+
+            support += min(line.length, chord.length)
         candidates.append((support, endpoint))
 
     candidates.sort(reverse=True, key=lambda item: item[0])
