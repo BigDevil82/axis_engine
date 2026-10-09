@@ -15,8 +15,8 @@ For development, append `--reload`. The interactive OpenAPI document is availabl
 | Method | Path | Business action |
 | --- | --- | --- |
 | `GET` | `/health` | Service health check |
-| `POST` | `/api/v1/skeleton/extract` | Extract wall axes, opening embedments, and slab regions from raw CAD primitives |
-| `POST` | `/api/v1/skeleton/normalize` | Calibrate an engineer-edited skeleton and regenerate slab regions |
+| `POST` | `/api/v1/skeleton/extract` | Extract wall axes, opening embedments, slab regions, and dangling endpoints from raw CAD primitives |
+| `POST` | `/api/v1/skeleton/normalize` | Calibrate an engineer-edited skeleton and return its dangling endpoints |
 | `POST` | `/api/v1/structure/design` | Generate shear walls, beams, and structural slab regions from a confirmed skeleton |
 | `POST` | `/api/v1/structure/normalize` | Calibrate an engineer-edited structural layout and regenerate slab regions |
 

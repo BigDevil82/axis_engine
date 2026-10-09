@@ -19,6 +19,7 @@ from axis_engine.linework_axis_extractor import (
 from axis_engine.opening_clustering import cluster_opening_geometries
 from axis_engine.opening_embedment import infer_opening_embedments
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
+from axis_engine.skeleton_diagnostics import find_skeleton_isolated_points
 from axis_engine.skeleton_spur_pruner import prune_skeleton_spurs
 from axis_engine.skeleton_topology_calibrator import calibrate_skeleton_topology
 from axis_engine.structural_design.skeleton_spaces import build_buffered_network, extract_slab_regions
@@ -131,6 +132,7 @@ def normalize_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
         opening_embedments = pruned.opening_embedments
 
     slab_regions = _skeleton_slab_regions(wall_axes, opening_embedments, options)
+    isolated_points = find_skeleton_isolated_points(wall_axes, opening_embedments)
     return {
         "wall_axes": [
             wall_axis_to_payload(line, thickness, index)
@@ -148,11 +150,13 @@ def normalize_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
             slab_region_to_payload(region, index)
             for index, region in enumerate(slab_regions)
         ],
+        "isolated_points": [[x, y] for x, y in isolated_points],
         "diagnostics": {
             "wall_axis_count": len(wall_axes),
             "opening_embedment_count": len(opening_embedments),
             "axis_line_count": len(axis_lines),
             "slab_region_count": len(slab_regions),
+            "isolated_point_count": len(isolated_points),
         },
     }
 

@@ -85,6 +85,7 @@ class SkeletonResponse(BaseModel):
     opening_embedments: list[OpeningPayload]
     axis_lines: list[AxisLinePayload]
     slab_regions: list[SlabRegionPayload]
+    isolated_points: list[list[float]]
     diagnostics: dict[str, Any]
 
 

@@ -23,8 +23,8 @@
 
 1. CAD 插件读取墙体、门窗、轴网图层基础图元。
 2. 调用 `extract_skeleton` 提取建筑骨架。
-3. 前端展示墙轴线、门窗嵌入线、楼板分区，工程师人工修正。
-4. 调用 `normalize_skeleton` 对人工修改后的骨架做对齐、拓扑修复、剪枝，并重新返回楼板分区。
+3. 前端展示墙轴线、门窗嵌入线、楼板分区和孤立点，工程师人工修正。
+4. 调用 `normalize_skeleton` 对人工修改后的骨架做对齐、拓扑修复、剪枝，并重新返回楼板分区和孤立点。
 5. 调用 `design_structure` 基于确认后的骨架生成剪力墙和梁。
 6. 前端展示结构设计结果，工程师人工修正。
 7. 调用 `normalize_structure` 对修改后的剪力墙和梁做剪枝、延伸搭接，并重新返回楼板分区。
@@ -104,6 +104,14 @@
 }
 ```
 
+### 孤立点
+
+`isolated_points` 是骨架线网中度数为 1 的端点坐标，即未连接成闭合区域的悬垂端点。骨架提取和骨架校正都会返回该字段，CAD 插件应在图中标识这些位置，供工程师补线或调整连接关系。
+
+```json
+[[0, 0], [3000, 4000]]
+```
+
 ### 剪力墙
 
 ```json
@@ -158,11 +166,13 @@
   "opening_embedments": [],
   "axis_lines": [],
   "slab_regions": [],
+  "isolated_points": [],
   "diagnostics": {
     "wall_axis_count": 0,
     "opening_embedment_count": 0,
     "axis_line_count": 0,
     "slab_region_count": 0,
+    "isolated_point_count": 0,
     "wall_geometry_count": 0,
     "opening_geometry_count": 0,
     "axis_geometry_count": 0,

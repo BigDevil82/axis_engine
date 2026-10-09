@@ -110,11 +110,13 @@ CAD 图层图元
       "area": 19680000
     }
   ],
+  "isolated_points": [],
   "diagnostics": {
     "wall_axis_count": 1,
     "opening_embedment_count": 1,
     "axis_line_count": 1,
     "slab_region_count": 1,
+    "isolated_point_count": 0,
     "wall_geometry_count": 1,
     "opening_geometry_count": 1,
     "axis_geometry_count": 1,
@@ -124,7 +126,7 @@ CAD 图层图元
 }
 ```
 
-UI 应保存并显示骨架对象；`slab_regions` 主要用于闭合性检查和填色展示。
+UI 应保存并显示骨架对象；`slab_regions` 主要用于闭合性检查和填色展示，`isolated_points` 应作为待修正端点标识。
 
 ## 2. 校准人工修改后的骨架
 
@@ -167,11 +169,13 @@ UI 应保存并显示骨架对象；`slab_regions` 主要用于闭合性检查�
   "opening_embedments": [],
   "axis_lines": [],
   "slab_regions": [],
+  "isolated_points": [],
   "diagnostics": {
     "wall_axis_count": 0,
     "opening_embedment_count": 0,
     "axis_line_count": 0,
-    "slab_region_count": 0
+    "slab_region_count": 0,
+    "isolated_point_count": 0
   }
 }
 ```
