@@ -107,6 +107,7 @@ POST /api/v1/skeleton/extract
     }
   ],
   "slab_regions": [],
+  "isolated_points": [[x, y]],
   "diagnostics": {}
 }
 ```
@@ -117,6 +118,7 @@ POST /api/v1/skeleton/extract
 - `opening_embedments`：门、窗等洞口所在的嵌入线。
 - `axis_lines`：用于后续校准与规整的参考轴网。
 - `slab_regions`：骨架围合产生的楼板区域，可用于检查空间是否闭合。
+- `isolated_points`：骨架线网中度数为 1 的悬垂端点坐标；前端应绘制为待修正标记，不应作为骨架对象回传。
 - `diagnostics`：数量、墙厚候选值、聚类数量等排查数据。
 
 **3. 人工修改后的骨架校准**
