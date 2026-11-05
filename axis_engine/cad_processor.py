@@ -29,7 +29,10 @@ from axis_engine.opening_embedment import (
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 from axis_engine.room_generation import generate_rooms_from_segments
 from axis_engine.skeleton_spur_pruner import prune_skeleton_spurs
-from axis_engine.skeleton_topology_calibrator import calibrate_skeleton_topology
+from axis_engine.skeleton_topology_calibrator import (
+    calibrate_skeleton_topology,
+    snap_skeleton_endpoint_gaps,
+)
 
 
 @dataclass(frozen=True)
@@ -131,6 +134,7 @@ class CADLayoutProcessor:
         self._align_wall_axes_to_reference_axes()
         self._align_openings_to_reference_axes()
         self._prune_skeleton_spurs()
+        self._snap_skeleton_endpoint_gaps()
         self._geometry_built = True
 
         return LayoutArtifacts(
@@ -324,6 +328,15 @@ class CADLayoutProcessor:
             self.opening_embedments,
             **self.spur_prune_options,
         )
+        self.wall_axes = result.wall_axes
+        self.opening_embedments = result.opening_embedments
+        self.components = _components_from_embedments(self.opening_embedments)
+
+    def _snap_skeleton_endpoint_gaps(self):
+        if not self.wall_axes and not self.opening_embedments:
+            return
+
+        result = snap_skeleton_endpoint_gaps(self.wall_axes, self.opening_embedments)
         self.wall_axes = result.wall_axes
         self.opening_embedments = result.opening_embedments
         self.components = _components_from_embedments(self.opening_embedments)

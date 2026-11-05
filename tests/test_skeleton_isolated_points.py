@@ -36,6 +36,22 @@ class SkeletonIsolatedPointsTests(unittest.TestCase):
         self.assertEqual(result["diagnostics"]["isolated_point_count"], 2)
         self.assertEqual(SkeletonResponse.model_validate(result).isolated_points, result["isolated_points"])
 
+    def test_normalization_closes_sub_unit_endpoint_gap(self):
+        result = normalize_skeleton(
+            {
+                "wall_axes": [
+                    {"line": [[0, 0], [1000, 0]], "thickness": 200},
+                    {"line": [[1000.3, 0.2], [1000.3, 1000]], "thickness": 200},
+                ],
+                "options": {
+                    "topology_calibration": {"endpoint_snap_tolerance": 0.1},
+                    "spur_prune": {"stitch_gap_distance": 0.0},
+                },
+            }
+        )
+
+        self.assertEqual(result["isolated_points"], [[0.0, 0.0], [1000.3, 1000.0]])
+
     def test_extracted_skeleton_returns_dangling_endpoints(self):
         result = extract_skeleton(
             {

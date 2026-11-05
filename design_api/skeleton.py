@@ -21,7 +21,10 @@ from axis_engine.opening_embedment import infer_opening_embedments
 from axis_engine.raw_wall_polygon_builder import build_wall_polygon_from_raw_lines
 from axis_engine.skeleton_diagnostics import find_skeleton_isolated_points
 from axis_engine.skeleton_spur_pruner import prune_skeleton_spurs
-from axis_engine.skeleton_topology_calibrator import calibrate_skeleton_topology
+from axis_engine.skeleton_topology_calibrator import (
+    calibrate_skeleton_topology,
+    snap_skeleton_endpoint_gaps,
+)
 from axis_engine.structural_design.skeleton_spaces import build_buffered_network, extract_slab_regions
 
 from design_api.serialization import (
@@ -130,6 +133,11 @@ def normalize_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
         pruned = prune_skeleton_spurs(wall_axes, opening_embedments, **prune_options)
         wall_axes = pruned.wall_axes
         opening_embedments = pruned.opening_embedments
+
+    if wall_axes or opening_embedments:
+        snapped = snap_skeleton_endpoint_gaps(wall_axes, opening_embedments)
+        wall_axes = snapped.wall_axes
+        opening_embedments = snapped.opening_embedments
 
     slab_regions = _skeleton_slab_regions(wall_axes, opening_embedments, options)
     isolated_points = find_skeleton_isolated_points(wall_axes, opening_embedments)

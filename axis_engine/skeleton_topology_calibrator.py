@@ -87,6 +87,32 @@ def calibrate_skeleton_topology(
     return _restore_semantic_segments(split_segments)
 
 
+def snap_skeleton_endpoint_gaps(
+    wall_axes: Sequence[tuple[LineString, float]],
+    opening_embedments: Sequence[OpeningEmbedment],
+    tolerance: float = 1.0,
+    axis_tolerance: float = 8.0,
+    min_segment_length: float = 1.0,
+) -> SkeletonCalibrationResult:
+    """Close sub-unit gaps left by pruning or semantic geometry reconstruction."""
+    records = _collect_records(wall_axes, opening_embedments, min_segment_length)
+    segments = [
+        segment
+        for record in records
+        for segment in [_axis_segment_from_record(record, axis_tolerance)]
+        if segment is not None and segment.length >= min_segment_length
+    ]
+    aligned = _calibrate_near_collinear_segments(
+        segments,
+        const_tolerance=tolerance,
+        gap_tolerance=tolerance,
+        min_segment_length=min_segment_length,
+    )
+    snapped = _snap_segment_endpoints(aligned, tolerance)
+    split_segments = _split_at_orthogonal_intersections(snapped, min_segment_length)
+    return _restore_semantic_segments(split_segments)
+
+
 def _collect_records(
     wall_axes: Sequence[tuple[LineString, float]],
     opening_embedments: Sequence[OpeningEmbedment],
