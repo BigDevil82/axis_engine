@@ -52,6 +52,42 @@ class SkeletonIsolatedPointsTests(unittest.TestCase):
 
         self.assertEqual(result["isolated_points"], [[0.0, 0.0], [1000.3, 1000.0]])
 
+    def test_normalization_closes_sub_unit_collinear_overlap(self):
+        result = normalize_skeleton(
+            {
+                "wall_axes": [
+                    {"line": [[0, 0], [1000.014, 0]], "thickness": 200},
+                    {"line": [[1000, 0], [2000, 0]], "thickness": 200},
+                ],
+                "options": {
+                    "topology_calibration": {"endpoint_snap_tolerance": 0.001},
+                    "spur_prune": {"stitch_gap_distance": 0.0},
+                },
+            }
+        )
+
+        self.assertEqual(result["isolated_points"], [[0.0, 0.0], [2000.0, 0.0]])
+
+    def test_normalization_closes_t_junction_with_endpoint_drift(self):
+        result = normalize_skeleton(
+            {
+                "wall_axes": [
+                    {"line": [[0, 0], [1000, 0]], "thickness": 200},
+                    {"line": [[1000, 0], [2000, 0]], "thickness": 200},
+                    {"line": [[1000.01, 0], [1000.01, 1000]], "thickness": 200},
+                ],
+                "options": {
+                    "topology_calibration": {"endpoint_snap_tolerance": 0.001},
+                    "spur_prune": {"stitch_gap_distance": 0.0},
+                },
+            }
+        )
+
+        self.assertEqual(
+            result["isolated_points"],
+            [[0.0, 0.0], [1000.01, 1000.0], [2000.0, 0.0]],
+        )
+
     def test_extracted_skeleton_returns_dangling_endpoints(self):
         result = extract_skeleton(
             {

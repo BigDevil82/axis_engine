@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numbers
 from dataclasses import dataclass
+from math import hypot
 from typing import Sequence
 
 from shapely.geometry import LineString, Point, box
@@ -102,13 +103,8 @@ def snap_skeleton_endpoint_gaps(
         for segment in [_axis_segment_from_record(record, axis_tolerance)]
         if segment is not None and segment.length >= min_segment_length
     ]
-    aligned = _calibrate_near_collinear_segments(
-        segments,
-        const_tolerance=tolerance,
-        gap_tolerance=tolerance,
-        min_segment_length=min_segment_length,
-    )
-    snapped = _snap_segment_endpoints(aligned, tolerance)
+    clustered = _snap_nearby_endpoint_clusters(segments, tolerance)
+    snapped = _snap_segment_endpoints(clustered, tolerance)
     split_segments = _split_at_orthogonal_intersections(snapped, min_segment_length)
     return _restore_semantic_segments(split_segments)
 
@@ -282,6 +278,65 @@ def _snap_segment_endpoints(
         )
         snapped.append(_rebuild_axis_segment(segment, start, end))
     return [segment for segment in snapped if segment.length > 0]
+
+
+def _snap_nearby_endpoint_clusters(
+    segments: Sequence[_AxisSegment],
+    tolerance: float,
+) -> list[_AxisSegment]:
+    endpoints = [
+        (segment, point)
+        for segment in segments
+        for point in (segment.start, segment.end)
+    ]
+    parent = list(range(len(endpoints)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(first: int, second: int) -> None:
+        first = find(first)
+        second = find(second)
+        if first != second:
+            parent[second] = first
+
+    for first, (first_segment, first_point) in enumerate(endpoints):
+        for second in range(first + 1, len(endpoints)):
+            second_segment, second_point = endpoints[second]
+            if first_segment.axis == second_segment.axis and abs(first_segment.const - second_segment.const) > 1e-6:
+                continue
+            if hypot(first_point[0] - second_point[0], first_point[1] - second_point[1]) <= tolerance:
+                union(first, second)
+
+    groups: dict[int, list[tuple[_AxisSegment, Point2D]]] = {}
+    for index, (segment, point) in enumerate(endpoints):
+        groups.setdefault(find(index), []).append((segment, point))
+
+    anchors: dict[int, tuple[float, float]] = {}
+    for root, group in groups.items():
+        vertical = [segment.const for segment, _point in group if segment.axis == "v"]
+        horizontal = [segment.const for segment, _point in group if segment.axis == "h"]
+        x = min(vertical) if vertical else min(point[0] for _segment, point in group)
+        y = min(horizontal) if horizontal else min(point[1] for _segment, point in group)
+        anchors[root] = (x, y)
+
+    snapped: list[_AxisSegment] = []
+    for index, segment in enumerate(segments):
+        start_anchor = anchors[find(index * 2)]
+        end_anchor = anchors[find(index * 2 + 1)]
+        if segment.axis == "h":
+            start = (start_anchor[0], segment.const)
+            end = (end_anchor[0], segment.const)
+        else:
+            start = (segment.const, start_anchor[1])
+            end = (segment.const, end_anchor[1])
+        rebuilt = _rebuild_axis_segment(segment, start, end)
+        if rebuilt.length > 0:
+            snapped.append(rebuilt)
+    return snapped
 
 
 def _snap_endpoint(
